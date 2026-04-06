@@ -141,6 +141,11 @@
             <button id="startBtn" disabled>开始游戏</button>
             <button id="restartBtn" disabled>重新开局</button>
         </div>
+        <div class="row" id="incomingBox" style="display:none;">
+            <div class="text" id="incomingText">收到连接请求</div>
+            <button id="acceptBtn">接受</button>
+            <button id="rejectBtn">拒绝</button>
+        </div>
         <div class="row">
             <div id="status">正在初始化连接...</div>
         </div>
@@ -173,6 +178,10 @@
         const connectBtn = document.getElementById('connectBtn');
         const startBtn = document.getElementById('startBtn');
         const restartBtn = document.getElementById('restartBtn');
+        const incomingBox = document.getElementById('incomingBox');
+        const incomingText = document.getElementById('incomingText');
+        const acceptBtn = document.getElementById('acceptBtn');
+        const rejectBtn = document.getElementById('rejectBtn');
         const debugLogEl = document.getElementById('debugLog');
 
         const GRID = 20;
@@ -186,6 +195,9 @@
         let gameRunning = false;
         let localPlayer = null;
         let peerReady = false;
+        let isConnecting = false;
+        let pendingIncomingConn = null;
+        let connectedPeerId = '';
 
         const state = {
             snakes: {
@@ -234,9 +246,61 @@
                 log('主动连接失败：Peer 未准备好。');
                 return;
             }
+            if (targetId === myIdEl.textContent) {
+                setStatus('不能连接自己的ID。');
+                log('主动连接失败：目标是自己。');
+                return;
+            }
+            if (conn && conn.open) {
+                setStatus('已连接到 ' + connectedPeerId + '，请先刷新页面后再连接其他目标。');
+                log('已连接状态下拒绝发起新连接。');
+                return;
+            }
+            if (isConnecting) {
+                setStatus('正在连接中，请稍候。');
+                log('重复点击连接被忽略。');
+                return;
+            }
+
+            hideIncomingRequest();
+            isConnecting = true;
+            connectBtn.disabled = true;
+            connectBtn.textContent = '连接中...';
             conn = peer.connect(targetId);
-            setupConnection();
+            setupConnection(conn, false);
             log('正在主动连接目标ID：' + targetId);
+        });
+
+        acceptBtn.addEventListener('click', () => {
+            if (!pendingIncomingConn) return;
+            if (conn && conn.open) {
+                pendingIncomingConn.close();
+                pendingIncomingConn = null;
+                hideIncomingRequest();
+                return;
+            }
+            isHost = true;
+            localPlayer = 'A';
+            roleEl.textContent = '房主（绿色）';
+            conn = pendingIncomingConn;
+            pendingIncomingConn = null;
+            hideIncomingRequest();
+            isConnecting = true;
+            connectBtn.disabled = true;
+            connectBtn.textContent = '连接中...';
+            setStatus('正在接受连接请求...');
+            log('用户已接受来电请求。');
+            setupConnection(conn, true);
+        });
+
+        rejectBtn.addEventListener('click', () => {
+            if (pendingIncomingConn) {
+                pendingIncomingConn.close();
+                log('用户已拒绝来电请求。');
+            }
+            pendingIncomingConn = null;
+            hideIncomingRequest();
+            setStatus('已拒绝该连接请求。');
         });
 
         startBtn.addEventListener('click', () => {
@@ -257,18 +321,29 @@
             setStatus('已重新开局。');
         });
 
-        function setupConnection() {
-            if (!conn) return;
-            conn.on('open', () => {
-                if (!isHost) {
+        function setupConnection(activeConn, asHost) {
+            if (!activeConn) return;
+            activeConn.on('open', () => {
+                conn = activeConn;
+                isConnecting = false;
+                connectedPeerId = activeConn.peer || '';
+                connectBtn.disabled = true;
+                connectBtn.textContent = '已连接';
+
+                if (!asHost) {
+                    isHost = false;
                     localPlayer = 'B';
                     roleEl.textContent = '加入者（蓝色）';
+                } else {
+                    isHost = true;
+                    localPlayer = 'A';
+                    roleEl.textContent = '房主（绿色）';
                 }
 
                 startBtn.disabled = !isHost;
                 restartBtn.disabled = !isHost;
                 setGameState('已连接，等待房主开始');
-                setStatus('连接成功：P2P直连已建立。');
+                setStatus('连接成功：P2P直连已建立（对端：' + connectedPeerId + '）。');
                 log('数据通道已打开，连接成功。');
 
                 if (isHost) {
@@ -276,7 +351,7 @@
                 }
             });
 
-            conn.on('data', data => {
+            activeConn.on('data', data => {
                 if (!data || typeof data !== 'object') return;
                 if (data.type === 'input' && isHost) {
                     applyInput('B', data.dir);
@@ -299,18 +374,34 @@
                 }
             });
 
-            conn.on('error', err => {
+            activeConn.on('error', err => {
                 const msg = '数据通道错误：' + (err && err.type ? err.type : 'unknown');
                 setStatus(msg);
                 log(msg);
+                isConnecting = false;
+                if (!conn || !conn.open) {
+                    connectBtn.disabled = false;
+                    connectBtn.textContent = '连接好友';
+                }
             });
 
-            conn.on('close', () => {
+            activeConn.on('close', () => {
+                const closedPeer = activeConn.peer || connectedPeerId || '未知';
+                if (conn === activeConn) {
+                    conn = null;
+                    connectedPeerId = '';
+                    isHost = false;
+                    localPlayer = null;
+                    isConnecting = false;
+                    connectBtn.disabled = false;
+                    connectBtn.textContent = '连接好友';
+                    roleEl.textContent = '未连接';
+                }
                 setStatus('连接已断开。');
                 setGameState('等待连接');
                 startBtn.disabled = true;
                 restartBtn.disabled = true;
-                log('数据通道已关闭。');
+                log('数据通道已关闭（对端：' + closedPeer + '）。');
             });
         }
 
@@ -379,12 +470,22 @@
             });
 
             peer.on('connection', connection => {
-                conn = connection;
-                isHost = true;
-                localPlayer = 'A';
-                roleEl.textContent = '房主（绿色）';
-                log('收到被动连接请求，已切换为房主。');
-                setupConnection();
+                const requesterId = connection.peer || '未知';
+                if (conn && conn.open) {
+                    log('收到来自 ' + requesterId + ' 的来电，但当前已连接，自动拒绝。');
+                    connection.close();
+                    return;
+                }
+                if (isConnecting) {
+                    log('收到来自 ' + requesterId + ' 的来电，但本端正在连接中，自动拒绝。');
+                    connection.close();
+                    return;
+                }
+
+                pendingIncomingConn = connection;
+                showIncomingRequest(requesterId);
+                setStatus('收到连接请求：' + requesterId + '，请选择接受或拒绝。');
+                log('收到被动连接请求，等待用户确认。');
             });
         }
 
@@ -431,6 +532,16 @@
             const time = new Date().toLocaleTimeString();
             debugLogEl.textContent += '\n[' + time + '] ' + message;
             debugLogEl.scrollTop = debugLogEl.scrollHeight;
+        }
+
+        function showIncomingRequest(requesterId) {
+            incomingText.textContent = '收到来自 ' + requesterId + ' 的连接请求';
+            incomingBox.style.display = 'flex';
+        }
+
+        function hideIncomingRequest() {
+            incomingBox.style.display = 'none';
+            incomingText.textContent = '收到连接请求';
         }
 
         function broadcast(message) {
