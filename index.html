@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>双人贪吃蛇 · WebRTC P2P 测试</title>
+    <title>双人贪吃蛇 · 稳定联机版</title>
     <link rel="icon" href="data:,">
     <style>
         * {
@@ -51,7 +51,8 @@
             margin-bottom: 0;
         }
 
-        input {
+        input,
+        select {
             flex: 1;
             min-width: 180px;
             padding: 10px 12px;
@@ -59,6 +60,19 @@
             border-radius: 10px;
             background: #0b1420;
             color: #f2f7ff;
+        }
+
+        input[type="checkbox"] {
+            flex: 0;
+            min-width: auto;
+            width: 16px;
+            height: 16px;
+            padding: 0;
+            accent-color: #5ecbff;
+        }
+
+        .mini-input {
+            min-width: 250px;
         }
 
         button {
@@ -87,6 +101,7 @@
         }
 
         .scoreboard {
+            width: min(900px, 96vw);
             display: flex;
             justify-content: space-between;
             gap: 14px;
@@ -114,7 +129,7 @@
         #debugLog {
             width: min(900px, 96vw);
             margin-top: 8px;
-            max-height: 140px;
+            max-height: 170px;
             overflow: auto;
             padding: 10px;
             font-size: 12px;
@@ -128,30 +143,37 @@
     </style>
 </head>
 <body>
-    <h1>双人贪吃蛇（WebRTC P2P）</h1>
+    <h1>双人贪吃蛇（稳定联机版）</h1>
 
     <div class="panel">
         <div class="row">
-            <div>你的ID：<b id="myId">生成中...</b></div>
+            <div>你的ID：<b id="myId">初始化中...</b></div>
             <div class="text">角色：<b id="role">未连接</b></div>
         </div>
+
+        <div class="row">
+            <select id="transportMode">
+                <option value="peer">WebRTC P2P</option>
+                <option value="relay">WebSocket 中继</option>
+            </select>
+            <input id="relayUrl" class="mini-input" placeholder="relay模式地址，例如 wss://your-domain/ws 或 ws://127.0.0.1:8765">
+            <label class="text"><input id="relayOnly" type="checkbox"> P2P仅用TURN中继</label>
+            <button id="applyNetBtn">应用网络模式</button>
+        </div>
+
         <div class="row">
             <input id="peerId" placeholder="输入好友ID后点击连接">
             <button id="connectBtn">连接好友</button>
             <button id="startBtn" disabled>开始游戏</button>
             <button id="restartBtn" disabled>重新开局</button>
         </div>
-        <div class="row">
-            <input id="meteredApp" class="mini-input" placeholder="可选：Metered应用名（不含 .metered.live）">
-            <input id="meteredApiKey" class="mini-input" placeholder="可选：Metered API Key">
-            <label class="text"><input id="relayOnly" type="checkbox"> 仅用TURN中继</label>
-            <button id="applyTurnBtn">应用网络配置</button>
-        </div>
+
         <div class="row" id="incomingBox" style="display:none;">
             <div class="text" id="incomingText">收到连接请求</div>
             <button id="acceptBtn">接受</button>
             <button id="rejectBtn">拒绝</button>
         </div>
+
         <div class="row">
             <div id="status">正在初始化连接...</div>
         </div>
@@ -165,13 +187,44 @@
 
     <canvas id="game" width="600" height="400"></canvas>
     <div class="tips">
-        操作：方向键/WASD 均可控制自己蛇头方向。房主负责同步整个游戏状态；加入者只发送输入指令，双方画面会一致。<br>
-        测试方式：A 打开页面获得ID -> B 输入A的ID连接 -> A点“开始游戏”即可联机。<br>
-        联机排障：建议用 Chrome 无痕窗口测试，并临时关闭可能拦截网络请求的扩展。若日志持续 701，请填入你自己的云TURN参数后点“应用网络配置”。
+        玩法：方向键/WASD 控制方向。房主（绿色）作为游戏权威状态端。<br>
+        推荐流程：A 先打开并把 ID 发给 B，B 点击连接，A 点击接受。<br>
+        说明：若日志出现大量 701（TURN/STUN 不可达），切换到 WebSocket 中继模式并填写可达的中继地址。
     </div>
     <pre id="debugLog">[调试日志] 页面已加载，等待初始化...</pre>
 
     <script>
+        const STORAGE_KEY = 'snake_stable_network_v1';
+        const RELAY_ID_KEY = 'snake_relay_client_id_v1';
+        const DEFAULT_RELAY_URL = 'ws://127.0.0.1:8765';
+        const CONNECT_TIMEOUT_MS = 25000;
+
+        const DEFAULT_RTC_CONFIG = {
+            iceTransportPolicy: 'all',
+            iceServers: [
+                { urls: 'stun:stun.cloudflare.com:3478' },
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                {
+                    urls: [
+                        'turn:openrelay.metered.ca:80?transport=udp',
+                        'turn:openrelay.metered.ca:80?transport=tcp',
+                        'turn:15.235.47.158:80?transport=tcp'
+                    ],
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                },
+                {
+                    urls: [
+                        'turn:openrelay.metered.ca:443?transport=tcp',
+                        'turns:openrelay.metered.ca:443?transport=tcp'
+                    ],
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                }
+            ]
+        };
+
         const canvas = document.getElementById('game');
         const ctx = canvas.getContext('2d');
         const myIdEl = document.getElementById('myId');
@@ -180,65 +233,49 @@
         const gameStateEl = document.getElementById('gameState');
         const scoreAEl = document.getElementById('scoreA');
         const scoreBEl = document.getElementById('scoreB');
+        const transportModeEl = document.getElementById('transportMode');
+        const relayUrlEl = document.getElementById('relayUrl');
+        const relayOnlyEl = document.getElementById('relayOnly');
+        const applyNetBtn = document.getElementById('applyNetBtn');
         const peerIdInput = document.getElementById('peerId');
         const connectBtn = document.getElementById('connectBtn');
         const startBtn = document.getElementById('startBtn');
         const restartBtn = document.getElementById('restartBtn');
-        const meteredAppInput = document.getElementById('meteredApp');
-        const meteredApiKeyInput = document.getElementById('meteredApiKey');
-        const relayOnlyInput = document.getElementById('relayOnly');
-        const applyTurnBtn = document.getElementById('applyTurnBtn');
         const incomingBox = document.getElementById('incomingBox');
         const incomingText = document.getElementById('incomingText');
         const acceptBtn = document.getElementById('acceptBtn');
         const rejectBtn = document.getElementById('rejectBtn');
         const debugLogEl = document.getElementById('debugLog');
 
-        const NETCFG_STORAGE_KEY = 'snake_webrtc_turn_config_v1';
-        const DEFAULT_ICE_SERVERS = [
-            { urls: 'stun:stun.cloudflare.com:3478' },
-            { urls: 'stun:openrelay.metered.ca:80' },
-            { urls: 'stun:openrelay.metered.ca:443' },
-            { urls: 'stun:15.235.47.158:80' },
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            {
-                urls: [
-                    'turn:openrelay.metered.ca:80?transport=udp',
-                    'turn:openrelay.metered.ca:80?transport=tcp',
-                    'turn:15.235.47.158:80?transport=tcp'
-                ],
-                username: 'openrelayproject',
-                credential: 'openrelayproject'
-            },
-            {
-                urls: [
-                    'turn:openrelay.metered.ca:443?transport=tcp',
-                    'turns:openrelay.metered.ca:443?transport=tcp'
-                ],
-                username: 'openrelayproject',
-                credential: 'openrelayproject'
-            }
-        ];
-
         const GRID = 20;
         const COLS = canvas.width / GRID;
         const ROWS = canvas.height / GRID;
         const TICK_MS = 130;
 
-        let conn = null;
+        let peer = null;
+        let peerReady = false;
+        let dataConn = null;
+
+        let relaySocket = null;
+        let relayReady = false;
+
+        let localId = '';
+        let connectedPeerId = '';
         let isHost = false;
+        let localPlayer = null;
+
+        let isConnecting = false;
+        let pendingOutgoingPeerId = '';
+        let connectTimeoutId = null;
+
+        let pendingIncoming = {
+            kind: '',
+            peerId: '',
+            conn: null
+        };
+
         let gameTimer = null;
         let gameRunning = false;
-        let localPlayer = null;
-        let peerReady = false;
-        let isConnecting = false;
-        let pendingIncomingConn = null;
-        let connectedPeerId = '';
-        let connectTimeoutId = null;
-        let connectingToPeerId = '';
-        let isRebuildingPeer = false;
-        let relayFailHintShown = false;
 
         const state = {
             snakes: {
@@ -260,30 +297,28 @@
         };
 
         const isFileProtocol = location.protocol === 'file:';
+
         if (isFileProtocol) {
-            connectBtn.disabled = true;
-            startBtn.disabled = true;
-            restartBtn.disabled = true;
-            meteredAppInput.disabled = true;
-            meteredApiKeyInput.disabled = true;
-            relayOnlyInput.disabled = true;
-            applyTurnBtn.disabled = true;
+            disableAllNetworkControls();
             myIdEl.textContent = '不可用';
-            setStatus('检测到你正在使用 file:// 打开页面。请先启动本地HTTP服务，再通过 http://localhost 访问。');
-            setGameState('被浏览器安全策略阻止');
             roleEl.textContent = '不可用（需HTTP）';
-            log('检测到 file 协议，已禁止联机功能。');
+            setGameState('被浏览器安全策略阻止');
+            setStatus('检测到 file://。请先启动 HTTP 服务，再通过 http://127.0.0.1:端口 访问。');
+            log('检测到 file 协议，网络功能已禁用。');
+        } else {
+            restoreNetworkConfig();
+            updateNetworkModeUI();
+            initNetworkLayer();
         }
 
-        let peer = null;
-        restoreNetworkConfig();
-        if (!isFileProtocol) {
-            bootstrapPeer();
-        }
-
-        applyTurnBtn.addEventListener('click', async () => {
+        applyNetBtn.addEventListener('click', async () => {
             if (isFileProtocol) return;
-            await rebuildPeerWithCurrentConfig();
+            saveNetworkConfig();
+            await initNetworkLayer(true);
+        });
+
+        transportModeEl.addEventListener('change', () => {
+            updateNetworkModeUI();
         });
 
         connectBtn.addEventListener('click', () => {
@@ -292,240 +327,191 @@
                 alert('请输入对方ID');
                 return;
             }
-            if (!peer || !peerReady) {
-                setStatus('Peer 尚未就绪，请稍后再试。');
-                log('主动连接失败：Peer 未准备好。');
-                return;
-            }
-            if (targetId === myIdEl.textContent) {
+            if (targetId === localId) {
                 setStatus('不能连接自己的ID。');
-                log('主动连接失败：目标是自己。');
+                log('连接失败：目标ID等于自己ID。');
                 return;
             }
-            if (conn && conn.open) {
-                setStatus('已连接到 ' + connectedPeerId + '，请先刷新页面后再连接其他目标。');
-                log('已连接状态下拒绝发起新连接。');
+            if (connectedPeerId) {
+                setStatus('当前已连接 ' + connectedPeerId + '，请先刷新页面再连接新目标。');
+                log('已连接状态下拒绝二次连接。');
                 return;
             }
             if (isConnecting) {
                 setStatus('正在连接中，请稍候。');
-                log('重复点击连接被忽略。');
                 return;
             }
 
-            hideIncomingRequest();
-            isConnecting = true;
-            connectingToPeerId = targetId;
-            connectBtn.disabled = true;
-            connectBtn.textContent = '连接中...';
-            conn = peer.connect(targetId, {
-                reliable: true,
-                serialization: 'json'
-            });
-            setupConnection(conn, false);
-            log('正在主动连接目标ID：' + targetId);
+            if (getMode() === 'peer') {
+                connectByPeer(targetId);
+            } else {
+                connectByRelay(targetId);
+            }
         });
 
         acceptBtn.addEventListener('click', () => {
-            if (!pendingIncomingConn) return;
-            if (conn && conn.open) {
-                pendingIncomingConn.close();
-                pendingIncomingConn = null;
+            if (!pendingIncoming.kind || !pendingIncoming.peerId) return;
+            if (connectedPeerId) {
                 hideIncomingRequest();
+                clearPendingIncoming();
                 return;
             }
-            isHost = true;
-            localPlayer = 'A';
-            roleEl.textContent = '房主（绿色）';
-            conn = pendingIncomingConn;
-            pendingIncomingConn = null;
-            hideIncomingRequest();
-            isConnecting = true;
-            connectBtn.disabled = true;
-            connectBtn.textContent = '连接中...';
-            setStatus('正在接受连接请求...');
-            log('用户已接受来电请求。');
-            setupConnection(conn, true);
+
+            if (pendingIncoming.kind === 'peer') {
+                setStatus('正在接受连接请求...');
+                isConnecting = true;
+                connectBtn.disabled = true;
+                connectBtn.textContent = '连接中...';
+                dataConn = pendingIncoming.conn;
+                setupPeerConnection(dataConn, true);
+                clearPendingIncoming();
+                return;
+            }
+
+            if (pendingIncoming.kind === 'relay') {
+                const peerId = pendingIncoming.peerId;
+                clearPendingIncoming();
+                establishConnection(true, peerId);
+                sendRelay({
+                    type: 'relay_accept',
+                    from: localId,
+                    to: peerId
+                });
+                return;
+            }
         });
 
         rejectBtn.addEventListener('click', () => {
-            if (pendingIncomingConn) {
-                pendingIncomingConn.close();
-                log('用户已拒绝来电请求。');
+            if (!pendingIncoming.kind || !pendingIncoming.peerId) return;
+
+            const peerId = pendingIncoming.peerId;
+            if (pendingIncoming.kind === 'peer' && pendingIncoming.conn) {
+                try {
+                    pendingIncoming.conn.close();
+                } catch (err) {
+                    log('拒绝来电时关闭Peer连接失败：' + getErr(err));
+                }
             }
-            pendingIncomingConn = null;
+
+            if (pendingIncoming.kind === 'relay') {
+                sendRelay({
+                    type: 'relay_reject',
+                    from: localId,
+                    to: peerId,
+                    reason: '对方拒绝'
+                });
+            }
+
+            clearPendingIncoming();
             hideIncomingRequest();
-            setStatus('已拒绝该连接请求。');
+            setStatus('已拒绝连接请求。');
+            log('用户拒绝来自 ' + peerId + ' 的连接请求。');
         });
 
         startBtn.addEventListener('click', () => {
-            if (!isHost || !conn || !conn.open) return;
+            if (!isHost || !connectedPeerId) return;
             resetState();
             startGameLoop();
-            broadcast({ type: 'game_start', payload: getPublicState() });
+            sendTransport({ type: 'game_start', payload: getPublicState() });
             setGameState('游戏进行中');
             setStatus('已开始游戏，祝你好运。');
         });
 
         restartBtn.addEventListener('click', () => {
-            if (!isHost || !conn || !conn.open) return;
+            if (!isHost || !connectedPeerId) return;
             resetState();
             startGameLoop();
-            broadcast({ type: 'game_start', payload: getPublicState() });
+            sendTransport({ type: 'game_start', payload: getPublicState() });
             setGameState('游戏进行中');
             setStatus('已重新开局。');
         });
 
-        function setupConnection(activeConn, asHost) {
-            if (!activeConn) return;
-
-            const handleOpen = () => {
-                if (conn && conn.open && conn !== activeConn) {
-                    // Another connection already won the race.
-                    try {
-                        activeConn.close();
-                    } catch (err) {
-                        log('关闭竞争连接失败：' + (err && err.message ? err.message : 'unknown'));
-                    }
-                    return;
-                }
-
-                if (connectTimeoutId) {
-                    clearTimeout(connectTimeoutId);
-                    connectTimeoutId = null;
-                }
-
-                conn = activeConn;
-                isConnecting = false;
-                connectingToPeerId = '';
-                connectedPeerId = activeConn.peer || '';
-                connectBtn.disabled = true;
-                connectBtn.textContent = '已连接';
-
-                if (!asHost) {
-                    isHost = false;
-                    localPlayer = 'B';
-                    roleEl.textContent = '加入者（蓝色）';
-                } else {
-                    isHost = true;
-                    localPlayer = 'A';
-                    roleEl.textContent = '房主（绿色）';
-                }
-
-                startBtn.disabled = !isHost;
-                restartBtn.disabled = !isHost;
-                setGameState('已连接，等待房主开始');
-                setStatus('连接成功：P2P直连已建立（对端：' + connectedPeerId + '）。');
-                log('数据通道已打开，连接成功。');
-
-                if (isHost) {
-                    broadcast({ type: 'role', role: 'B' });
-                }
-            };
-
-            activeConn.on('open', handleOpen);
-            if (activeConn.open) {
-                // Incoming connection can already be open before user clicks "accept".
-                handleOpen();
+        document.addEventListener('keydown', e => {
+            const dir = keyToDir(e.key);
+            if (!dir || !localPlayer) return;
+            if (isHost) {
+                applyInput('A', dir);
+            } else {
+                sendTransport({ type: 'input', dir });
             }
+        });
 
-            if (connectTimeoutId) {
-                clearTimeout(connectTimeoutId);
-            }
-            connectTimeoutId = setTimeout(() => {
-                if (!activeConn.open) {
-                    const timeoutPeer = activeConn.peer || '未知';
-                    setStatus('连接超时，请重试（当前网络可能限制UDP/TURN）。');
-                    log('连接超时：' + timeoutPeer);
-                    isConnecting = false;
-                    connectingToPeerId = '';
-                    connectBtn.disabled = false;
-                    connectBtn.textContent = '连接好友';
-                    try {
-                        activeConn.close();
-                    } catch (err) {
-                        log('超时关闭连接失败：' + (err && err.message ? err.message : 'unknown'));
-                    }
-                }
-            }, 25000);
-
-            activeConn.on('data', data => {
-                if (!data || typeof data !== 'object') return;
-                if (data.type === 'input' && isHost) {
-                    applyInput('B', data.dir);
-                }
-                if (data.type === 'state' && !isHost) {
-                    applyRemoteState(data.payload);
-                }
-                if (data.type === 'game_start' && !isHost) {
-                    applyRemoteState(data.payload);
-                    setGameState('游戏进行中');
-                    setStatus('房主已开始游戏。');
-                }
-                if (data.type === 'game_over' && !isHost) {
-                    applyRemoteState(data.payload);
-                    setGameState('游戏结束');
-                    setStatus(data.message || '游戏结束');
-                }
-                if (data.type === 'role' && !isHost) {
-                    localPlayer = data.role;
-                }
-            });
-
-            activeConn.on('error', err => {
-                const msg = '数据通道错误：' + (err && err.type ? err.type : 'unknown');
-                setStatus(msg);
-                log(msg);
-                isConnecting = false;
-                connectingToPeerId = '';
-                if (connectTimeoutId) {
-                    clearTimeout(connectTimeoutId);
-                    connectTimeoutId = null;
-                }
-                if (!conn || !conn.open) {
-                    connectBtn.disabled = false;
-                    connectBtn.textContent = '连接好友';
-                }
-            });
-
-            activeConn.on('close', () => {
-                const closedPeer = activeConn.peer || connectedPeerId || '未知';
-                if (conn === activeConn) {
-                    conn = null;
-                    connectedPeerId = '';
-                    isHost = false;
-                    localPlayer = null;
-                    isConnecting = false;
-                    connectingToPeerId = '';
-                    if (connectTimeoutId) {
-                        clearTimeout(connectTimeoutId);
-                        connectTimeoutId = null;
-                    }
-                    connectBtn.disabled = false;
-                    connectBtn.textContent = '连接好友';
-                    roleEl.textContent = '未连接';
-                }
-                setStatus('连接已断开。');
-                setGameState('等待连接');
-                startBtn.disabled = true;
-                restartBtn.disabled = true;
-                log('数据通道已关闭（对端：' + closedPeer + '）。');
-            });
-
-            attachIceDebug(activeConn);
+        function getMode() {
+            return transportModeEl.value;
         }
 
-        async function bootstrapPeer() {
-            const loaded = await ensurePeerScript();
-            if (!loaded || typeof Peer === 'undefined') {
-                myIdEl.textContent = '初始化失败';
-                setStatus('PeerJS 加载失败，请检查网络或部署文件。');
-                setGameState('初始化失败');
-                log('PeerJS 加载失败，无法建立连接。');
+        async function initNetworkLayer(forceRebuild = false) {
+            setStatus('正在初始化网络层...');
+
+            if (forceRebuild) {
+                teardownNetwork();
+            }
+
+            if (getMode() === 'peer') {
+                await initPeerMode(forceRebuild);
+            } else {
+                initRelayMode(forceRebuild);
+            }
+        }
+
+        function teardownNetwork() {
+            clearConnectTimer();
+            isConnecting = false;
+            pendingOutgoingPeerId = '';
+            hideIncomingRequest();
+            clearPendingIncoming();
+            closeActiveSession(false, '重建网络层');
+
+            if (dataConn) {
+                try {
+                    dataConn.close();
+                } catch (err) {
+                    log('关闭旧DataConnection失败：' + getErr(err));
+                }
+                dataConn = null;
+            }
+
+            if (peer) {
+                try {
+                    peer.destroy();
+                } catch (err) {
+                    log('销毁旧Peer失败：' + getErr(err));
+                }
+                peer = null;
+            }
+
+            peerReady = false;
+
+            if (relaySocket) {
+                try {
+                    relaySocket.close();
+                } catch (err) {
+                    log('关闭旧Relay连接失败：' + getErr(err));
+                }
+                relaySocket = null;
+            }
+
+            relayReady = false;
+        }
+
+        async function initPeerMode(forceRebuild) {
+            if (peer && peerReady && !forceRebuild) {
                 return;
             }
 
-            const rtcConfig = await buildRtcConfig();
+            relayReady = false;
+            relaySocket = null;
+
+            const loaded = await ensurePeerScript();
+            if (!loaded || typeof Peer === 'undefined') {
+                setStatus('PeerJS 加载失败，请检查网络。');
+                myIdEl.textContent = '初始化失败';
+                log('PeerJS 加载失败。');
+                return;
+            }
+
+            const rtcConfig = JSON.parse(JSON.stringify(DEFAULT_RTC_CONFIG));
+            rtcConfig.iceTransportPolicy = relayOnlyEl.checked ? 'relay' : 'all';
 
             peer = new Peer({
                 host: '0.peerjs.com',
@@ -536,203 +522,380 @@
                 config: rtcConfig
             });
 
+            peerReady = false;
+            myIdEl.textContent = '生成中...';
+            setStatus('正在连接 PeerJS 信令服务器...');
+            log('初始化Peer（iceTransportPolicy=' + rtcConfig.iceTransportPolicy + '）');
+
             peer.on('open', id => {
                 peerReady = true;
+                localId = id;
                 myIdEl.textContent = id;
-                setStatus('ID已生成，等待连接。你可以作为房主被连接，或输入好友ID主动连接。');
+                setStatus('P2P模式就绪，等待连接。');
                 log('Peer 打开成功，ID=' + id);
             });
 
-            peer.on('disconnected', () => {
-                if (isRebuildingPeer) return;
-                peerReady = false;
-                setStatus('信令连接断开，尝试重连中...');
-                log('Peer disconnected，执行 peer.reconnect()。');
-                try {
-                    peer.reconnect();
-                } catch (err) {
-                    log('Peer 重连失败：' + (err && err.message ? err.message : 'unknown'));
+            peer.on('connection', incomingConn => {
+                const from = incomingConn.peer || '未知';
+                if (connectedPeerId) {
+                    log('收到 ' + from + ' 来电，但当前已连接，自动拒绝。');
+                    incomingConn.close();
+                    return;
                 }
-            });
 
-            peer.on('close', () => {
-                if (isRebuildingPeer) return;
-                peerReady = false;
-                setStatus('Peer 已关闭，请刷新页面重试。');
-                log('Peer close。');
+                pendingIncoming = {
+                    kind: 'peer',
+                    peerId: from,
+                    conn: incomingConn
+                };
+                showIncomingRequest(from);
+                setStatus('收到连接请求：' + from + '，请选择接受或拒绝。');
+                log('收到Peer来电，等待用户确认。');
             });
 
             peer.on('error', err => {
+                peerReady = false;
                 const detail = err && (err.type || err.message) ? (err.type || err.message) : 'unknown';
-                setStatus('连接错误：' + detail);
+                setStatus('Peer错误：' + detail);
                 log('Peer error: ' + detail);
             });
 
-            peer.on('connection', connection => {
-                const requesterId = connection.peer || '未知';
-                if (conn && conn.open) {
-                    log('收到来自 ' + requesterId + ' 的来电，但当前已连接，自动拒绝。');
-                    connection.close();
-                    return;
+            peer.on('close', () => {
+                peerReady = false;
+                if (!connectedPeerId) {
+                    setStatus('Peer 已关闭，请点击“应用网络模式”重试。');
                 }
-                if (isConnecting) {
-                    if (requesterId === connectingToPeerId) {
-                        log('检测到双方同时发起连接，切换到来电确认流程。');
-                        if (conn && !conn.open && conn !== connection) {
-                            try {
-                                conn.close();
-                            } catch (err) {
-                                log('关闭旧的出站连接失败：' + (err && err.message ? err.message : 'unknown'));
-                            }
-                        }
-                        isConnecting = false;
-                        connectingToPeerId = '';
-                        connectBtn.disabled = false;
-                        connectBtn.textContent = '连接好友';
-                    } else {
-                        log('收到来自 ' + requesterId + ' 的来电，但本端正在连接中，自动拒绝。');
-                        connection.close();
-                        return;
-                    }
-                }
+                log('Peer close。');
+            });
 
-                pendingIncomingConn = connection;
-                showIncomingRequest(requesterId);
-                setStatus('收到连接请求：' + requesterId + '，请选择接受或拒绝。');
-                log('收到被动连接请求，等待用户确认。');
+            peer.on('disconnected', () => {
+                peerReady = false;
+                setStatus('Peer 与信令断开，请点击“应用网络模式”重连。');
+                log('Peer disconnected（不自动重建，避免ID频繁变化）。');
             });
         }
 
-        async function buildRtcConfig() {
-            saveNetworkConfig();
-
-            const appName = meteredAppInput.value.trim();
-            const apiKey = meteredApiKeyInput.value.trim();
-            const relayOnly = relayOnlyInput.checked;
-
-            let iceServers = DEFAULT_ICE_SERVERS;
-            let source = '默认公共ICE';
-
-            if (appName && apiKey) {
-                const endpoint = 'https://' + appName + '.metered.live/api/v1/turn/credentials?apiKey=' + encodeURIComponent(apiKey);
-                try {
-                    const response = await fetch(endpoint, { method: 'GET', cache: 'no-store' });
-                    if (!response.ok) {
-                        throw new Error('HTTP ' + response.status);
-                    }
-                    const meteredServers = await response.json();
-                    if (Array.isArray(meteredServers) && meteredServers.length > 0) {
-                        iceServers = meteredServers;
-                        source = 'Metered云TURN';
-                    } else {
-                        log('Metered返回了空ICE配置，已回退默认公共ICE。');
-                    }
-                } catch (err) {
-                    log('拉取Metered云TURN失败：' + (err && err.message ? err.message : 'unknown') + '，已回退默认公共ICE。');
-                }
+        function initRelayMode(forceRebuild) {
+            if (relaySocket && relayReady && !forceRebuild) {
+                return;
             }
 
-            const config = {
-                iceServers,
-                iceTransportPolicy: relayOnly ? 'relay' : 'all'
+            if (peer) {
+                try {
+                    peer.destroy();
+                } catch (err) {
+                    log('切换到Relay时销毁Peer失败：' + getErr(err));
+                }
+                peer = null;
+            }
+            peerReady = false;
+
+            const relayUrl = relayUrlEl.value.trim();
+            if (!/^wss?:\/\//i.test(relayUrl)) {
+                setStatus('中继地址格式错误，请填写 ws:// 或 wss:// 开头地址。');
+                myIdEl.textContent = '未连接';
+                return;
+            }
+
+            localId = getOrCreateRelayClientId();
+            myIdEl.textContent = localId;
+
+            setStatus('正在连接 WebSocket 中继...');
+            log('连接Relay：' + relayUrl);
+
+            relaySocket = new WebSocket(relayUrl);
+
+            relaySocket.onopen = () => {
+                relayReady = true;
+                sendRelay({ type: 'register', clientId: localId });
+                setStatus('中继模式就绪，等待连接。');
+                log('Relay连接成功，已注册 clientId=' + localId);
             };
 
-            log('ICE配置来源：' + source + '；策略=' + config.iceTransportPolicy + '；服务器数=' + iceServers.length);
-            return config;
+            relaySocket.onmessage = event => {
+                const msg = safeJsonParse(event.data);
+                if (!msg) return;
+                handleRelayMessage(msg);
+            };
+
+            relaySocket.onerror = () => {
+                relayReady = false;
+                setStatus('Relay连接失败，请检查中继地址或网络。');
+                log('Relay socket error。');
+            };
+
+            relaySocket.onclose = () => {
+                relayReady = false;
+                if (!connectedPeerId) {
+                    setStatus('Relay连接已关闭，请点击“应用网络模式”重连。');
+                }
+                log('Relay socket close。');
+                closeActiveSession(false, '中继连接关闭');
+            };
         }
 
-        function saveNetworkConfig() {
-            try {
-                const cfg = {
-                    appName: meteredAppInput.value.trim(),
-                    apiKey: meteredApiKeyInput.value.trim(),
-                    relayOnly: relayOnlyInput.checked
+        function connectByPeer(targetId) {
+            if (!peer || !peerReady) {
+                setStatus('Peer尚未就绪，请稍后重试。');
+                return;
+            }
+
+            beginConnectAttempt(targetId);
+            dataConn = peer.connect(targetId, {
+                reliable: true,
+                serialization: 'json'
+            });
+
+            setupPeerConnection(dataConn, false);
+            log('正在主动连接目标ID：' + targetId);
+        }
+
+        function setupPeerConnection(activeConn, asHost) {
+            if (!activeConn) return;
+
+            const onOpen = () => {
+                establishConnection(asHost, activeConn.peer || pendingOutgoingPeerId);
+                if (asHost) {
+                    sendTransport({ type: 'role', role: 'B' });
+                }
+            };
+
+            activeConn.on('open', onOpen);
+            if (activeConn.open) {
+                onOpen();
+            }
+
+            activeConn.on('data', data => {
+                handleGameMessage(data);
+            });
+
+            activeConn.on('error', err => {
+                const msg = '数据通道错误：' + getErr(err);
+                setStatus(msg);
+                log(msg);
+                failConnectAttempt(msg);
+            });
+
+            activeConn.on('close', () => {
+                if (connectedPeerId === (activeConn.peer || connectedPeerId)) {
+                    closeActiveSession(false, '对端关闭连接');
+                }
+                log('DataConnection close。');
+            });
+
+            attachIceDebug(activeConn);
+        }
+
+        function connectByRelay(targetId) {
+            if (!relayReady || !relaySocket || relaySocket.readyState !== WebSocket.OPEN) {
+                setStatus('Relay尚未就绪，请先点击“应用网络模式”。');
+                return;
+            }
+
+            beginConnectAttempt(targetId);
+            sendRelay({
+                type: 'relay_offer',
+                from: localId,
+                to: targetId
+            });
+            log('通过Relay发送连接请求：' + targetId);
+        }
+
+        function handleRelayMessage(msg) {
+            if (msg.type === 'register_ack') {
+                log('Relay注册确认：' + (msg.clientId || localId));
+                return;
+            }
+
+            if (msg.type === 'relay_error') {
+                log('Relay错误：' + (msg.message || 'unknown'));
+                if (isConnecting && msg.to === pendingOutgoingPeerId) {
+                    failConnectAttempt('中继转发失败：' + (msg.message || 'unknown'));
+                }
+                return;
+            }
+
+            if (msg.type === 'relay_offer' && msg.to === localId) {
+                const from = msg.from || '未知';
+                if (connectedPeerId || isConnecting) {
+                    sendRelay({
+                        type: 'relay_reject',
+                        from: localId,
+                        to: from,
+                        reason: '忙线中'
+                    });
+                    log('收到 ' + from + ' 的中继来电，当前忙线，自动拒绝。');
+                    return;
+                }
+
+                pendingIncoming = {
+                    kind: 'relay',
+                    peerId: from,
+                    conn: null
                 };
-                localStorage.setItem(NETCFG_STORAGE_KEY, JSON.stringify(cfg));
-            } catch (err) {
-                log('保存网络配置失败：' + (err && err.message ? err.message : 'unknown'));
+                showIncomingRequest(from);
+                setStatus('收到连接请求：' + from + '，请选择接受或拒绝。');
+                log('收到Relay来电，等待用户确认。');
+                return;
+            }
+
+            if (msg.type === 'relay_accept' && msg.to === localId) {
+                if (!isConnecting || pendingOutgoingPeerId !== msg.from) return;
+                establishConnection(false, msg.from);
+                return;
+            }
+
+            if (msg.type === 'relay_reject' && msg.to === localId) {
+                if (!isConnecting || pendingOutgoingPeerId !== msg.from) return;
+                failConnectAttempt('对方拒绝连接：' + (msg.reason || '无原因'));
+                return;
+            }
+
+            if (msg.type === 'relay_disconnect' && msg.to === localId) {
+                if (connectedPeerId === msg.from) {
+                    closeActiveSession(false, '对端已断开');
+                }
+                return;
+            }
+
+            if (msg.type === 'relay_payload' && msg.to === localId) {
+                if (connectedPeerId && msg.from === connectedPeerId) {
+                    handleGameMessage(msg.payload);
+                }
             }
         }
 
-        function restoreNetworkConfig() {
-            try {
-                const raw = localStorage.getItem(NETCFG_STORAGE_KEY);
-                if (!raw) return;
-                const cfg = JSON.parse(raw);
-                if (cfg && typeof cfg === 'object') {
-                    meteredAppInput.value = cfg.appName || '';
-                    meteredApiKeyInput.value = cfg.apiKey || '';
-                    relayOnlyInput.checked = Boolean(cfg.relayOnly);
-                }
-            } catch (err) {
-                log('读取网络配置失败：' + (err && err.message ? err.message : 'unknown'));
+        function beginConnectAttempt(targetId) {
+            isConnecting = true;
+            pendingOutgoingPeerId = targetId;
+            connectBtn.disabled = true;
+            connectBtn.textContent = '连接中...';
+            setStatus('正在连接 ' + targetId + ' ...');
+
+            clearConnectTimer();
+            connectTimeoutId = setTimeout(() => {
+                failConnectAttempt('连接超时：' + targetId + '（网络可能限制WebRTC/TURN）');
+            }, CONNECT_TIMEOUT_MS);
+        }
+
+        function failConnectAttempt(message) {
+            clearConnectTimer();
+            isConnecting = false;
+            pendingOutgoingPeerId = '';
+            connectBtn.disabled = false;
+            connectBtn.textContent = '连接好友';
+            setStatus(message);
+            log(message);
+        }
+
+        function establishConnection(asHost, peerId) {
+            clearConnectTimer();
+            isConnecting = false;
+            pendingOutgoingPeerId = '';
+            connectedPeerId = peerId || '';
+            localPlayer = asHost ? 'A' : 'B';
+            isHost = asHost;
+
+            connectBtn.disabled = true;
+            connectBtn.textContent = '已连接';
+            startBtn.disabled = !isHost;
+            restartBtn.disabled = !isHost;
+            roleEl.textContent = asHost ? '房主（绿色）' : '加入者（蓝色）';
+
+            hideIncomingRequest();
+            clearPendingIncoming();
+
+            setGameState('已连接，等待房主开始');
+            setStatus('连接成功：' + connectedPeerId);
+            log('连接建立成功：peer=' + connectedPeerId + '，mode=' + getMode());
+        }
+
+        function clearConnectTimer() {
+            if (connectTimeoutId) {
+                clearTimeout(connectTimeoutId);
+                connectTimeoutId = null;
             }
         }
 
-        async function rebuildPeerWithCurrentConfig() {
-            if (isRebuildingPeer) return;
+        function closeActiveSession(notifyPeer, reason) {
+            if (notifyPeer && connectedPeerId && getMode() === 'relay' && relayReady) {
+                sendRelay({
+                    type: 'relay_disconnect',
+                    from: localId,
+                    to: connectedPeerId
+                });
+            }
 
-            isRebuildingPeer = true;
-            applyTurnBtn.disabled = true;
-            applyTurnBtn.textContent = '应用中...';
-            setStatus('正在应用网络配置...');
-            log('开始重建Peer并应用新网络配置。');
+            connectedPeerId = '';
+            isHost = false;
+            localPlayer = null;
+            startBtn.disabled = true;
+            restartBtn.disabled = true;
+            connectBtn.disabled = false;
+            connectBtn.textContent = '连接好友';
+            roleEl.textContent = '未连接';
+            setGameState('等待连接');
 
-            try {
-                saveNetworkConfig();
+            if (reason) {
+                setStatus(reason);
+                log(reason);
+            }
+        }
 
-                if (pendingIncomingConn) {
-                    try {
-                        pendingIncomingConn.close();
-                    } catch (err) {
-                        log('关闭待处理来电失败：' + (err && err.message ? err.message : 'unknown'));
-                    }
-                    pendingIncomingConn = null;
+        function sendTransport(payload) {
+            if (!connectedPeerId) return;
+
+            if (getMode() === 'peer') {
+                if (dataConn && dataConn.open) {
+                    dataConn.send(payload);
                 }
+                return;
+            }
 
-                if (conn) {
-                    try {
-                        conn.close();
-                    } catch (err) {
-                        log('关闭旧数据通道失败：' + (err && err.message ? err.message : 'unknown'));
-                    }
-                }
+            sendRelay({
+                type: 'relay_payload',
+                from: localId,
+                to: connectedPeerId,
+                payload
+            });
+        }
 
-                conn = null;
-                isHost = false;
-                localPlayer = null;
-                isConnecting = false;
-                connectingToPeerId = '';
-                connectedPeerId = '';
-                hideIncomingRequest();
-                startBtn.disabled = true;
-                restartBtn.disabled = true;
-                roleEl.textContent = '未连接';
-                connectBtn.disabled = false;
-                connectBtn.textContent = '连接好友';
+        function sendRelay(message) {
+            if (!relaySocket || relaySocket.readyState !== WebSocket.OPEN) {
+                return;
+            }
+            relaySocket.send(JSON.stringify(message));
+        }
 
-                if (connectTimeoutId) {
-                    clearTimeout(connectTimeoutId);
-                    connectTimeoutId = null;
-                }
+        function handleGameMessage(data) {
+            if (!data || typeof data !== 'object') return;
 
-                if (peer) {
-                    try {
-                        peer.destroy();
-                    } catch (err) {
-                        log('销毁旧Peer失败：' + (err && err.message ? err.message : 'unknown'));
-                    }
-                }
+            if (data.type === 'input' && isHost) {
+                applyInput('B', data.dir);
+                return;
+            }
 
-                peer = null;
-                peerReady = false;
-                await bootstrapPeer();
-                setGameState('等待连接');
-                setStatus('网络配置已应用，请重新连接好友。');
-            } finally {
-                isRebuildingPeer = false;
-                applyTurnBtn.disabled = false;
-                applyTurnBtn.textContent = '应用网络配置';
+            if (data.type === 'state' && !isHost) {
+                applyRemoteState(data.payload);
+                return;
+            }
+
+            if (data.type === 'game_start' && !isHost) {
+                applyRemoteState(data.payload);
+                setGameState('游戏进行中');
+                setStatus('房主已开始游戏。');
+                return;
+            }
+
+            if (data.type === 'game_over' && !isHost) {
+                applyRemoteState(data.payload);
+                setGameState('游戏结束');
+                setStatus(data.message || '游戏结束');
+                return;
+            }
+
+            if (data.type === 'role' && !isHost) {
+                localPlayer = data.role;
             }
         }
 
@@ -743,7 +906,6 @@
                 return;
             }
 
-            relayFailHintShown = false;
             log('ICE调试已挂载。');
 
             pc.addEventListener('iceconnectionstatechange', () => {
@@ -759,20 +921,18 @@
             });
 
             pc.addEventListener('icecandidateerror', event => {
-                const host = event && event.hostCandidate ? event.hostCandidate : 'unknown';
                 const url = event && event.url ? event.url : 'unknown';
+                const code = event && typeof event.errorCode !== 'undefined' ? event.errorCode : 'unknown';
                 const text = event && event.errorText ? event.errorText : 'unknown';
-                log('ICE候选错误 host=' + host + ' url=' + url + ' code=' + event.errorCode + ' text=' + text);
-                if (!relayFailHintShown && event && event.errorCode === 701 && String(url).startsWith('turn')) {
-                    relayFailHintShown = true;
-                    setStatus('TURN不可达：请填写云TURN参数后点击“应用网络配置”。');
+                log('ICE候选错误 url=' + url + ' code=' + code + ' text=' + text);
+                if (code === 701) {
+                    setStatus('检测到 701：当前网络无法访问TURN/STUN，建议切换到WebSocket中继模式。');
                 }
             });
         }
 
         function ensurePeerScript() {
             if (typeof Peer !== 'undefined') {
-                log('PeerJS 已存在，跳过脚本加载。');
                 return Promise.resolve(true);
             }
 
@@ -809,14 +969,65 @@
             });
         }
 
-        function log(message) {
-            const time = new Date().toLocaleTimeString();
-            debugLogEl.textContent += '\n[' + time + '] ' + message;
-            debugLogEl.scrollTop = debugLogEl.scrollHeight;
+        function disableAllNetworkControls() {
+            transportModeEl.disabled = true;
+            relayUrlEl.disabled = true;
+            relayOnlyEl.disabled = true;
+            applyNetBtn.disabled = true;
+            peerIdInput.disabled = true;
+            connectBtn.disabled = true;
+            startBtn.disabled = true;
+            restartBtn.disabled = true;
+            acceptBtn.disabled = true;
+            rejectBtn.disabled = true;
         }
 
-        function showIncomingRequest(requesterId) {
-            incomingText.textContent = '收到来自 ' + requesterId + ' 的连接请求';
+        function saveNetworkConfig() {
+            const cfg = {
+                mode: getMode(),
+                relayUrl: relayUrlEl.value.trim(),
+                relayOnly: relayOnlyEl.checked
+            };
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
+        }
+
+        function restoreNetworkConfig() {
+            relayUrlEl.value = DEFAULT_RELAY_URL;
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (!raw) return;
+            const cfg = safeJsonParse(raw);
+            if (!cfg || typeof cfg !== 'object') return;
+
+            if (cfg.mode === 'peer' || cfg.mode === 'relay') {
+                transportModeEl.value = cfg.mode;
+            }
+            if (typeof cfg.relayUrl === 'string' && cfg.relayUrl.trim()) {
+                relayUrlEl.value = cfg.relayUrl.trim();
+            }
+            relayOnlyEl.checked = Boolean(cfg.relayOnly);
+        }
+
+        function updateNetworkModeUI() {
+            const relayMode = getMode() === 'relay';
+            relayUrlEl.style.display = relayMode ? 'block' : 'none';
+        }
+
+        function getOrCreateRelayClientId() {
+            const cached = localStorage.getItem(RELAY_ID_KEY);
+            if (cached) return cached;
+
+            let id = '';
+            if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+                id = crypto.randomUUID();
+            } else {
+                id = 'relay-' + Math.random().toString(36).slice(2, 10);
+            }
+            localStorage.setItem(RELAY_ID_KEY, id);
+            return id;
+        }
+
+        function showIncomingRequest(peerId) {
+            incomingText.textContent = '收到来自 ' + peerId + ' 的连接请求';
             incomingBox.style.display = 'flex';
         }
 
@@ -825,22 +1036,45 @@
             incomingText.textContent = '收到连接请求';
         }
 
-        function broadcast(message) {
-            if (conn && conn.open) {
-                conn.send(message);
+        function clearPendingIncoming() {
+            pendingIncoming = {
+                kind: '',
+                peerId: '',
+                conn: null
+            };
+        }
+
+        function safeJsonParse(raw) {
+            try {
+                return JSON.parse(raw);
+            } catch (err) {
+                return null;
             }
         }
 
-        document.addEventListener('keydown', e => {
-            const dir = keyToDir(e.key);
-            if (!dir || !localPlayer) return;
+        function getErr(err) {
+            if (!err) return 'unknown';
+            return err.type || err.message || String(err);
+        }
 
-            if (isHost) {
-                applyInput('A', dir);
-            } else {
-                broadcast({ type: 'input', dir });
-            }
-        });
+        function setStatus(msg) {
+            statusEl.textContent = msg;
+        }
+
+        function setGameState(msg) {
+            gameStateEl.textContent = msg;
+        }
+
+        function log(message) {
+            const time = new Date().toLocaleTimeString();
+            debugLogEl.textContent += '\n[' + time + '] ' + message;
+            debugLogEl.scrollTop = debugLogEl.scrollHeight;
+        }
+
+        function updateScoreboard() {
+            scoreAEl.textContent = String(state.scores.A);
+            scoreBEl.textContent = String(state.scores.B);
+        }
 
         function keyToDir(key) {
             if (key === 'ArrowUp' || key === 'w' || key === 'W') return { x: 0, y: -1 };
@@ -853,9 +1087,7 @@
         function applyInput(playerId, dir) {
             if (!dir) return;
             const prev = state.dirs[playerId];
-            if (prev.x + dir.x === 0 && prev.y + dir.y === 0) {
-                return;
-            }
+            if (prev.x + dir.x === 0 && prev.y + dir.y === 0) return;
             state.pendingDirs[playerId] = { x: dir.x, y: dir.y };
         }
 
@@ -897,7 +1129,9 @@
             gameRunning = true;
             gameTimer = setInterval(() => {
                 stepGame();
-                broadcast({ type: 'state', payload: getPublicState() });
+                if (isHost && connectedPeerId) {
+                    sendTransport({ type: 'state', payload: getPublicState() });
+                }
             }, TICK_MS);
         }
 
@@ -925,6 +1159,7 @@
             if (deadA || deadB || headCrash) {
                 state.gameOver = true;
                 stopGameLoop();
+
                 if ((deadA && deadB) || headCrash) {
                     state.winner = '平局';
                 } else if (deadA) {
@@ -932,14 +1167,18 @@
                 } else {
                     state.winner = '绿色玩家获胜';
                 }
+
                 updateScoreboard();
                 setGameState('游戏结束');
                 setStatus('游戏结束：' + state.winner);
-                broadcast({
-                    type: 'game_over',
-                    message: '游戏结束：' + state.winner,
-                    payload: getPublicState()
-                });
+
+                if (isHost && connectedPeerId) {
+                    sendTransport({
+                        type: 'game_over',
+                        message: '游戏结束：' + state.winner,
+                        payload: getPublicState()
+                    });
+                }
                 return;
             }
 
@@ -982,19 +1221,6 @@
             if (!remoteState) return;
             Object.assign(state, remoteState);
             updateScoreboard();
-        }
-
-        function setStatus(msg) {
-            statusEl.textContent = msg;
-        }
-
-        function setGameState(msg) {
-            gameStateEl.textContent = msg;
-        }
-
-        function updateScoreboard() {
-            scoreAEl.textContent = String(state.scores.A);
-            scoreBEl.textContent = String(state.scores.B);
         }
 
         function draw() {
@@ -1082,7 +1308,6 @@
         stopGameLoop();
         setGameState('等待连接');
         draw();
-
     </script>
 </body>
 </html>
