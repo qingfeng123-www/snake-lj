@@ -141,6 +141,12 @@
             <button id="startBtn" disabled>开始游戏</button>
             <button id="restartBtn" disabled>重新开局</button>
         </div>
+        <div class="row">
+            <input id="meteredApp" class="mini-input" placeholder="可选：Metered应用名（不含 .metered.live）">
+            <input id="meteredApiKey" class="mini-input" placeholder="可选：Metered API Key">
+            <label class="text"><input id="relayOnly" type="checkbox"> 仅用TURN中继</label>
+            <button id="applyTurnBtn">应用网络配置</button>
+        </div>
         <div class="row" id="incomingBox" style="display:none;">
             <div class="text" id="incomingText">收到连接请求</div>
             <button id="acceptBtn">接受</button>
@@ -161,7 +167,7 @@
     <div class="tips">
         操作：方向键/WASD 均可控制自己蛇头方向。房主负责同步整个游戏状态；加入者只发送输入指令，双方画面会一致。<br>
         测试方式：A 打开页面获得ID -> B 输入A的ID连接 -> A点“开始游戏”即可联机。<br>
-        联机排障：建议用 Chrome 无痕窗口测试，并临时关闭可能拦截网络请求的扩展。
+        联机排障：建议用 Chrome 无痕窗口测试，并临时关闭可能拦截网络请求的扩展。若日志持续 701，请填入你自己的云TURN参数后点“应用网络配置”。
     </div>
     <pre id="debugLog">[调试日志] 页面已加载，等待初始化...</pre>
 
@@ -178,11 +184,42 @@
         const connectBtn = document.getElementById('connectBtn');
         const startBtn = document.getElementById('startBtn');
         const restartBtn = document.getElementById('restartBtn');
+        const meteredAppInput = document.getElementById('meteredApp');
+        const meteredApiKeyInput = document.getElementById('meteredApiKey');
+        const relayOnlyInput = document.getElementById('relayOnly');
+        const applyTurnBtn = document.getElementById('applyTurnBtn');
         const incomingBox = document.getElementById('incomingBox');
         const incomingText = document.getElementById('incomingText');
         const acceptBtn = document.getElementById('acceptBtn');
         const rejectBtn = document.getElementById('rejectBtn');
         const debugLogEl = document.getElementById('debugLog');
+
+        const NETCFG_STORAGE_KEY = 'snake_webrtc_turn_config_v1';
+        const DEFAULT_ICE_SERVERS = [
+            { urls: 'stun:stun.cloudflare.com:3478' },
+            { urls: 'stun:openrelay.metered.ca:80' },
+            { urls: 'stun:openrelay.metered.ca:443' },
+            { urls: 'stun:15.235.47.158:80' },
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            {
+                urls: [
+                    'turn:openrelay.metered.ca:80?transport=udp',
+                    'turn:openrelay.metered.ca:80?transport=tcp',
+                    'turn:15.235.47.158:80?transport=tcp'
+                ],
+                username: 'openrelayproject',
+                credential: 'openrelayproject'
+            },
+            {
+                urls: [
+                    'turn:openrelay.metered.ca:443?transport=tcp',
+                    'turns:openrelay.metered.ca:443?transport=tcp'
+                ],
+                username: 'openrelayproject',
+                credential: 'openrelayproject'
+            }
+        ];
 
         const GRID = 20;
         const COLS = canvas.width / GRID;
@@ -200,6 +237,8 @@
         let connectedPeerId = '';
         let connectTimeoutId = null;
         let connectingToPeerId = '';
+        let isRebuildingPeer = false;
+        let relayFailHintShown = false;
 
         const state = {
             snakes: {
@@ -225,6 +264,10 @@
             connectBtn.disabled = true;
             startBtn.disabled = true;
             restartBtn.disabled = true;
+            meteredAppInput.disabled = true;
+            meteredApiKeyInput.disabled = true;
+            relayOnlyInput.disabled = true;
+            applyTurnBtn.disabled = true;
             myIdEl.textContent = '不可用';
             setStatus('检测到你正在使用 file:// 打开页面。请先启动本地HTTP服务，再通过 http://localhost 访问。');
             setGameState('被浏览器安全策略阻止');
@@ -233,9 +276,15 @@
         }
 
         let peer = null;
+        restoreNetworkConfig();
         if (!isFileProtocol) {
             bootstrapPeer();
         }
+
+        applyTurnBtn.addEventListener('click', async () => {
+            if (isFileProtocol) return;
+            await rebuildPeerWithCurrentConfig();
+        });
 
         connectBtn.addEventListener('click', () => {
             const targetId = peerIdInput.value.trim();
@@ -476,37 +525,15 @@
                 return;
             }
 
+            const rtcConfig = await buildRtcConfig();
+
             peer = new Peer({
                 host: '0.peerjs.com',
                 port: 443,
                 path: '/',
                 secure: true,
                 debug: 2,
-                config: {
-                    iceServers: [
-                        { urls: 'stun:stun.cloudflare.com:3478' },
-                        { urls: 'stun:openrelay.metered.ca:80' },
-                        { urls: 'stun:openrelay.metered.ca:443' },
-                        { urls: 'stun:stun.l.google.com:19302' },
-                        { urls: 'stun:stun1.l.google.com:19302' },
-                        {
-                            urls: [
-                                'turn:openrelay.metered.ca:80?transport=udp',
-                                'turn:openrelay.metered.ca:80?transport=tcp'
-                            ],
-                            username: 'openrelayproject',
-                            credential: 'openrelayproject'
-                        },
-                        {
-                            urls: [
-                                'turn:openrelay.metered.ca:443?transport=tcp',
-                                'turns:openrelay.metered.ca:443?transport=tcp'
-                            ],
-                            username: 'openrelayproject',
-                            credential: 'openrelayproject'
-                        }
-                    ]
-                }
+                config: rtcConfig
             });
 
             peer.on('open', id => {
@@ -517,6 +544,7 @@
             });
 
             peer.on('disconnected', () => {
+                if (isRebuildingPeer) return;
                 peerReady = false;
                 setStatus('信令连接断开，尝试重连中...');
                 log('Peer disconnected，执行 peer.reconnect()。');
@@ -528,6 +556,7 @@
             });
 
             peer.on('close', () => {
+                if (isRebuildingPeer) return;
                 peerReady = false;
                 setStatus('Peer 已关闭，请刷新页面重试。');
                 log('Peer close。');
@@ -574,6 +603,139 @@
             });
         }
 
+        async function buildRtcConfig() {
+            saveNetworkConfig();
+
+            const appName = meteredAppInput.value.trim();
+            const apiKey = meteredApiKeyInput.value.trim();
+            const relayOnly = relayOnlyInput.checked;
+
+            let iceServers = DEFAULT_ICE_SERVERS;
+            let source = '默认公共ICE';
+
+            if (appName && apiKey) {
+                const endpoint = 'https://' + appName + '.metered.live/api/v1/turn/credentials?apiKey=' + encodeURIComponent(apiKey);
+                try {
+                    const response = await fetch(endpoint, { method: 'GET', cache: 'no-store' });
+                    if (!response.ok) {
+                        throw new Error('HTTP ' + response.status);
+                    }
+                    const meteredServers = await response.json();
+                    if (Array.isArray(meteredServers) && meteredServers.length > 0) {
+                        iceServers = meteredServers;
+                        source = 'Metered云TURN';
+                    } else {
+                        log('Metered返回了空ICE配置，已回退默认公共ICE。');
+                    }
+                } catch (err) {
+                    log('拉取Metered云TURN失败：' + (err && err.message ? err.message : 'unknown') + '，已回退默认公共ICE。');
+                }
+            }
+
+            const config = {
+                iceServers,
+                iceTransportPolicy: relayOnly ? 'relay' : 'all'
+            };
+
+            log('ICE配置来源：' + source + '；策略=' + config.iceTransportPolicy + '；服务器数=' + iceServers.length);
+            return config;
+        }
+
+        function saveNetworkConfig() {
+            try {
+                const cfg = {
+                    appName: meteredAppInput.value.trim(),
+                    apiKey: meteredApiKeyInput.value.trim(),
+                    relayOnly: relayOnlyInput.checked
+                };
+                localStorage.setItem(NETCFG_STORAGE_KEY, JSON.stringify(cfg));
+            } catch (err) {
+                log('保存网络配置失败：' + (err && err.message ? err.message : 'unknown'));
+            }
+        }
+
+        function restoreNetworkConfig() {
+            try {
+                const raw = localStorage.getItem(NETCFG_STORAGE_KEY);
+                if (!raw) return;
+                const cfg = JSON.parse(raw);
+                if (cfg && typeof cfg === 'object') {
+                    meteredAppInput.value = cfg.appName || '';
+                    meteredApiKeyInput.value = cfg.apiKey || '';
+                    relayOnlyInput.checked = Boolean(cfg.relayOnly);
+                }
+            } catch (err) {
+                log('读取网络配置失败：' + (err && err.message ? err.message : 'unknown'));
+            }
+        }
+
+        async function rebuildPeerWithCurrentConfig() {
+            if (isRebuildingPeer) return;
+
+            isRebuildingPeer = true;
+            applyTurnBtn.disabled = true;
+            applyTurnBtn.textContent = '应用中...';
+            setStatus('正在应用网络配置...');
+            log('开始重建Peer并应用新网络配置。');
+
+            try {
+                saveNetworkConfig();
+
+                if (pendingIncomingConn) {
+                    try {
+                        pendingIncomingConn.close();
+                    } catch (err) {
+                        log('关闭待处理来电失败：' + (err && err.message ? err.message : 'unknown'));
+                    }
+                    pendingIncomingConn = null;
+                }
+
+                if (conn) {
+                    try {
+                        conn.close();
+                    } catch (err) {
+                        log('关闭旧数据通道失败：' + (err && err.message ? err.message : 'unknown'));
+                    }
+                }
+
+                conn = null;
+                isHost = false;
+                localPlayer = null;
+                isConnecting = false;
+                connectingToPeerId = '';
+                connectedPeerId = '';
+                hideIncomingRequest();
+                startBtn.disabled = true;
+                restartBtn.disabled = true;
+                roleEl.textContent = '未连接';
+                connectBtn.disabled = false;
+                connectBtn.textContent = '连接好友';
+
+                if (connectTimeoutId) {
+                    clearTimeout(connectTimeoutId);
+                    connectTimeoutId = null;
+                }
+
+                if (peer) {
+                    try {
+                        peer.destroy();
+                    } catch (err) {
+                        log('销毁旧Peer失败：' + (err && err.message ? err.message : 'unknown'));
+                    }
+                }
+
+                peer = null;
+                peerReady = false;
+                await bootstrapPeer();
+                setGameState('等待连接');
+                setStatus('网络配置已应用，请重新连接好友。');
+            } finally {
+                isRebuildingPeer = false;
+                applyTurnBtn.disabled = false;
+                applyTurnBtn.textContent = '应用网络配置';
+            }
+        }
+
         function attachIceDebug(activeConn) {
             const pc = activeConn.peerConnection;
             if (!pc) {
@@ -581,6 +743,7 @@
                 return;
             }
 
+            relayFailHintShown = false;
             log('ICE调试已挂载。');
 
             pc.addEventListener('iceconnectionstatechange', () => {
@@ -598,7 +761,12 @@
             pc.addEventListener('icecandidateerror', event => {
                 const host = event && event.hostCandidate ? event.hostCandidate : 'unknown';
                 const url = event && event.url ? event.url : 'unknown';
-                log('ICE候选错误 host=' + host + ' url=' + url + ' code=' + event.errorCode);
+                const text = event && event.errorText ? event.errorText : 'unknown';
+                log('ICE候选错误 host=' + host + ' url=' + url + ' code=' + event.errorCode + ' text=' + text);
+                if (!relayFailHintShown && event && event.errorCode === 701 && String(url).startsWith('turn')) {
+                    relayFailHintShown = true;
+                    setStatus('TURN不可达：请填写云TURN参数后点击“应用网络配置”。');
+                }
             });
         }
 
