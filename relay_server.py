@@ -1,16 +1,15 @@
 import argparse
 import asyncio
 import json
-from typing import Dict
+from typing import Any, Dict
 
 import websockets
-from websockets.server import WebSocketServerProtocol
 
 
-CLIENTS: Dict[str, WebSocketServerProtocol] = {}
+CLIENTS: Dict[str, Any] = {}
 
 
-async def send_json(ws: WebSocketServerProtocol, payload: dict) -> None:
+async def send_json(ws: Any, payload: dict) -> None:
     await ws.send(json.dumps(payload, ensure_ascii=False))
 
 
@@ -39,7 +38,7 @@ async def forward_to_target(sender_id: str, payload: dict) -> None:
     await send_json(target_ws, payload)
 
 
-async def handler(ws: WebSocketServerProtocol) -> None:
+async def handler(ws: Any) -> None:
     client_id = ""
     try:
         async for raw in ws:
