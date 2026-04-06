@@ -2,112 +2,71 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>纯P2P · 终极修复版</title>
+    <title>P2P 双向连接修复版</title>
     <script src="https://cdn.jsdelivr.net/npm/peerjs@1.4.7/dist/peerjs.min.js"></script>
     <style>
-        body { background: #111; color: #fff; padding: 20px; font-family: Arial; }
-        #game { border: 2px solid #0f0; background: #000; }
-        input, button { padding: 6px 12px; margin: 5px; }
+        body{background:#111;color:#fff;padding:20px;font-family:Arial}
+        #game{border:2px solid #0f0}
+        input,button{padding:8px;margin:5px}
     </style>
 </head>
 <body>
-    <h3>纯P2P联机（无服务器、无中转）</h3>
-    <p>你的固定ID：<span id="myId" style="color:#0f0">加载中...</span></p>
-    <p>对方ID：<input id="targetId" placeholder="输入固定ID"> <button onclick="connect()">连接</button></p>
-    <p id="status">等待Peer初始化...</p>
+    <h3>P2P 联机（修复半连接）</h3>
+    <p>你的ID：<span id="myId" style="color:#0f0">加载中...</span></p>
+    <p>对方ID：<input id="pid" placeholder="输入ID"> <button onclick="link()">连接</button></p>
+    <p id="tip">等待连接...</p>
     <canvas id="game" width="600" height="400"></canvas>
 
     <script>
-        // ======================
-        // 纯P2P核心：仅初始化1次Peer（永不重建）
-        // ======================
         const canvas = document.getElementById('game');
         const ctx = canvas.getContext('2d');
-        const myIdEl = document.getElementById('myId');
-        const statusEl = document.getElementById('status');
+        const myId = document.getElementById('myId');
+        const tip = document.getElementById('tip');
         let conn = null;
 
         // 玩家数据
-        const game = {
-            me: { x: 100, y: 200, color: '#0f0' },
-            friend: { x: 400, y: 200, color: '#f0f' }
-        };
+        const me = {x:100,y:200}, friend={x:400,y:200};
 
-        // ✅ 纯P2P最优配置（无中继、纯UDP穿透、固定ID）
+        // 固定Peer，无重建
         const peer = new Peer({
-            host: '0.peerjs.com',
-            port: 443,
-            secure: true,
-            config: {
-                iceServers: [
-                    // 纯P2P专用STUN（全球最稳定，不被封杀）
-                    { urls: 'stun:stun.cloudflare.com:3478' },
-                    { urls: 'stun:stun.l.google.com:19302' }
-                ],
-                iceTransportPolicy: 'all', // 允许所有P2P传输（关键）
-                iceCandidatePoolSize: 10
-            }
+            host:'0.peerjs.com',port:443,secure:true,
+            config:{iceServers:[{urls:'stun:stun.cloudflare.com:3478'}]}
         });
 
-        // 固定ID（只触发一次，永不刷新）
-        peer.on('open', (id) => {
-            myIdEl.textContent = id;
-            statusEl.textContent = '✅ 纯P2P就绪，等待连接...';
-        });
+        // 初始化ID
+        peer.on('open',id=>{myId.textContent=id;tip.textContent='✅ 就绪'});
 
-        // 主动连接（纯P2P）
-        function connect() {
-            const id = document.getElementById('targetId').value.trim();
-            if (!id) return alert('请输入对方固定ID');
-            if (conn?.open) return alert('已连接');
-
-            statusEl.textContent = '🔄 纯P2P穿透中...';
-            conn = peer.connect(id, { timeout: 20000 });
-
-            // 连接成功
-            conn.on('open', () => {
-                statusEl.textContent = '✅ 纯P2P连接成功！';
-            });
-
-            // 接收数据
-            conn.on('data', (data) => {
-                game.friend.x = data.x;
-                game.friend.y = data.y;
-            });
-
-            // 错误（纯P2P网络问题）
-            conn.on('error', (err) => {
-                statusEl.textContent = '❌ P2P穿透失败：切换手机热点重试';
-                console.error(err);
-            });
+        // ======================================
+        // 核心修复：双向连接监听（主动+被动都处理）
+        // ======================================
+        function bindConn(c){
+            conn = c;
+            c.on('open',()=>{tip.textContent='✅ 连接成功！'});
+            c.on('data',data=>{friend.x=data.x;friend.y=data.y});
+            c.on('error',()=>{tip.textContent='❌ P2P数据通道失败'});
         }
 
-        // 接收被动连接
-        peer.on('connection', (connection) => {
-            conn = connection;
-            statusEl.textContent = '✅ 对方纯P2P连接成功！';
-        });
+        // 主动连接
+        function link(){bindConn(peer.connect(document.getElementById('pid').value))}
+
+        // 被动连接（对方连你，必须有！）
+        peer.on('connection',bindConn);
 
         // 键盘控制
-        document.addEventListener('keydown', (e) => {
-            const speed = 7;
-            switch (e.key) {
-                case 'ArrowUp': game.me.y -= speed; break;
-                case 'ArrowDown': game.me.y += speed; break;
-                case 'ArrowLeft': game.me.x -= speed; break;
-                case 'ArrowRight': game.me.x += speed; break;
+        document.addEventListener('keydown',e=>{
+            const s=7;
+            switch(e.key){
+                case'ArrowUp':me.y-=s;break;case'ArrowDown':me.y+=s;break;
+                case'ArrowLeft':me.x-=s;break;case'ArrowRight':me.x+=s;break;
             }
-            if (conn?.open) conn.send({ x: game.me.x, y: game.me.y });
+            conn?.send({x:me.x,y:me.y});
         });
 
-        // 游戏渲染
-        function draw() {
-            ctx.fillStyle = '#000';
-            ctx.fillRect(0, 0, 600, 400);
-            ctx.fillStyle = game.me.color;
-            ctx.fillRect(game.me.x, game.me.y, 30, 30);
-            ctx.fillStyle = game.friend.color;
-            ctx.fillRect(game.friend.x, game.friend.y, 30, 30);
+        // 渲染
+        function draw(){
+            ctx.fillStyle='#000';ctx.fillRect(0,0,600,400);
+            ctx.fillStyle='#0f0';ctx.fillRect(me.x,me.y,30,30);
+            ctx.fillStyle='#f0f';ctx.fillRect(friend.x,friend.y,30,30);
             requestAnimationFrame(draw);
         }
         draw();
