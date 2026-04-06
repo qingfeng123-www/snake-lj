@@ -198,6 +198,7 @@
         let isConnecting = false;
         let pendingIncomingConn = null;
         let connectedPeerId = '';
+        let connectTimeoutId = null;
 
         const state = {
             snakes: {
@@ -323,7 +324,23 @@
 
         function setupConnection(activeConn, asHost) {
             if (!activeConn) return;
-            activeConn.on('open', () => {
+
+            const handleOpen = () => {
+                if (conn && conn.open && conn !== activeConn) {
+                    // Another connection already won the race.
+                    try {
+                        activeConn.close();
+                    } catch (err) {
+                        log('关闭竞争连接失败：' + (err && err.message ? err.message : 'unknown'));
+                    }
+                    return;
+                }
+
+                if (connectTimeoutId) {
+                    clearTimeout(connectTimeoutId);
+                    connectTimeoutId = null;
+                }
+
                 conn = activeConn;
                 isConnecting = false;
                 connectedPeerId = activeConn.peer || '';
@@ -349,7 +366,32 @@
                 if (isHost) {
                     broadcast({ type: 'role', role: 'B' });
                 }
-            });
+            };
+
+            activeConn.on('open', handleOpen);
+            if (activeConn.open) {
+                // Incoming connection can already be open before user clicks "accept".
+                handleOpen();
+            }
+
+            if (connectTimeoutId) {
+                clearTimeout(connectTimeoutId);
+            }
+            connectTimeoutId = setTimeout(() => {
+                if (!activeConn.open) {
+                    const timeoutPeer = activeConn.peer || '未知';
+                    setStatus('连接超时，请重试。');
+                    log('连接超时：' + timeoutPeer);
+                    isConnecting = false;
+                    connectBtn.disabled = false;
+                    connectBtn.textContent = '连接好友';
+                    try {
+                        activeConn.close();
+                    } catch (err) {
+                        log('超时关闭连接失败：' + (err && err.message ? err.message : 'unknown'));
+                    }
+                }
+            }, 12000);
 
             activeConn.on('data', data => {
                 if (!data || typeof data !== 'object') return;
@@ -379,6 +421,10 @@
                 setStatus(msg);
                 log(msg);
                 isConnecting = false;
+                if (connectTimeoutId) {
+                    clearTimeout(connectTimeoutId);
+                    connectTimeoutId = null;
+                }
                 if (!conn || !conn.open) {
                     connectBtn.disabled = false;
                     connectBtn.textContent = '连接好友';
@@ -393,6 +439,10 @@
                     isHost = false;
                     localPlayer = null;
                     isConnecting = false;
+                    if (connectTimeoutId) {
+                        clearTimeout(connectTimeoutId);
+                        connectTimeoutId = null;
+                    }
                     connectBtn.disabled = false;
                     connectBtn.textContent = '连接好友';
                     roleEl.textContent = '未连接';
