@@ -1,0 +1,2727 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>蛇王：终极前端版</title>
+  <style>
+    :root {
+      --bg: radial-gradient(circle at 12% 18%, #fff3fb 0%, #ffe7f4 36%, #f8ddff 64%, #efd7ff 100%);
+      --panel: rgba(255, 248, 253, 0.82);
+      --panel-soft: rgba(255, 240, 250, 0.72);
+      --text: #5b3f69;
+      --sub: #9b79a9;
+      --line: rgba(221, 164, 208, 0.38);
+      --accent: #ff8fc9;
+      --accent-2: #ffb3dc;
+      --danger: #ff6da7;
+      --ok: #7bd0a9;
+      --shadow: 0 16px 38px rgba(172, 99, 148, 0.22);
+      --card-radius: 16px;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      font-family: "YouYuan", "Trebuchet MS", "Comic Sans MS", "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    body::before,
+    body::after {
+      content: "";
+      position: fixed;
+      width: 34vmax;
+      height: 34vmax;
+      border-radius: 50%;
+      filter: blur(45px);
+      opacity: 0.28;
+      z-index: 0;
+      pointer-events: none;
+      animation: floatGlow 8s ease-in-out infinite;
+    }
+
+    body::before {
+      left: -10vmax;
+      top: -8vmax;
+      background: #ff9fd0;
+    }
+
+    body::after {
+      right: -12vmax;
+      bottom: -10vmax;
+      animation-delay: 1.5s;
+      background: #b08cff;
+    }
+
+    @keyframes floatGlow {
+      0%,
+      100% {
+        transform: translateY(0px) scale(1);
+      }
+
+      50% {
+        transform: translateY(16px) scale(1.1);
+      }
+    }
+
+    #app {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 16px;
+    }
+
+    .screen {
+      width: min(1400px, 98vw);
+      height: min(900px, 96vh);
+      display: none;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.15), inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      overflow: hidden;
+      animation: fadeSlide 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+
+    .screen.active {
+      display: flex;
+      flex-direction: column;
+    }
+
+    @keyframes fadeSlide {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(120deg, rgba(255, 179, 221, 0.55), rgba(227, 189, 255, 0.45));
+    }
+
+    .title {
+      margin: 0;
+      font-size: clamp(20px, 3vw, 34px);
+      letter-spacing: 1px;
+      font-weight: 800;
+    }
+
+    .subtitle {
+      margin: 6px 0 0;
+      color: var(--sub);
+      font-size: 13px;
+    }
+
+    .chip {
+      font-size: 12px;
+      padding: 6px 10px;
+      border-radius: 20px;
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid var(--line);
+      margin-left: 8px;
+    }
+
+    .content {
+      flex: 1;
+      display: grid;
+      gap: 12px;
+      padding: 16px;
+      overflow: auto;
+    }
+
+    #menu .content {
+      grid-template-columns: 1.25fr 1fr;
+    }
+
+    .card {
+      background: var(--panel-soft);
+      border: 1px solid var(--line);
+      border-radius: var(--card-radius);
+      padding: 14px;
+      overflow: auto;
+    }
+
+    .grid-btns {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    button,
+    .btn-like {
+      border: 1px solid transparent;
+      border-radius: 999px;
+      cursor: pointer;
+      padding: 11px 12px;
+      font-size: 14px;
+      color: #623e67;
+      background: linear-gradient(135deg, var(--accent), #ffd4ee);
+      transition: transform 0.16s ease, filter 0.2s ease, border-color 0.2s;
+      font-weight: 700;
+      user-select: none;
+      box-shadow: 0 6px 16px rgba(255, 131, 191, 0.25);
+    }
+
+    button:hover,
+    .btn-like:hover {
+      filter: brightness(1.15);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(255, 131, 191, 0.4);
+    }
+
+    button:active,
+    .btn-like:active {
+      transform: translateY(1px) scale(0.96);
+    }
+
+    button.secondary {
+      color: #dfecf1;
+      border-color: rgba(255, 255, 255, 0.1);
+      background: rgba(30, 30, 40, 0.6);
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    }
+
+    button.secondary:hover {
+      background: rgba(50, 50, 60, 0.8);
+      box-shadow: 0 6px 15px rgba(0, 0, 0, 0.3);
+    }
+
+    button.warn {
+      background: linear-gradient(135deg, #ff84bd, #ffcbdf);
+      color: #6a3456;
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .list {
+      display: grid;
+      gap: 8px;
+      max-height: 360px;
+      overflow: auto;
+      padding-right: 3px;
+    }
+
+    .item {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      background: rgba(255, 255, 255, 0.52);
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .item b {
+      font-size: 14px;
+    }
+
+    .item small {
+      color: var(--sub);
+      display: block;
+      margin-top: 4px;
+    }
+
+    .tag {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 3px 8px;
+      color: var(--sub);
+      font-size: 12px;
+    }
+
+    .locked {
+      opacity: 0.55;
+      filter: grayscale(0.6);
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    #game .content {
+      grid-template-columns: 1fr 330px;
+      overflow: hidden;
+    }
+
+    .play-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 0;
+    }
+
+    #gameHud {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    .hud-cell {
+      background: rgba(255, 255, 255, 0.52);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 8px;
+      min-height: 58px;
+    }
+
+    .hud-cell span {
+      font-size: 12px;
+      color: var(--sub);
+    }
+
+    .hud-cell strong {
+      display: block;
+      margin-top: 4px;
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    #canvasWrap {
+      position: relative;
+      flex: 1;
+      min-height: 240px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      overflow: hidden;
+      background: #1a1a2e; /* Fallback */
+      box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5);
+    }
+
+    #canvasWrap.shake {
+      animation: cuteShake 0.25s ease;
+    }
+
+    @keyframes cuteShake {
+      0% { transform: translateX(0); }
+      30% { transform: translateX(-5px); }
+      60% { transform: translateX(4px); }
+      100% { transform: translateX(0); }
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    #fxLayer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    #mobilePad {
+      display: none;
+      grid-template-columns: repeat(3, 68px);
+      justify-content: center;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    #mobilePad button {
+      padding: 11px;
+      font-size: 18px;
+    }
+
+    .empty {
+      visibility: hidden;
+    }
+
+    .side-panel {
+      display: grid;
+      gap: 10px;
+      min-height: 0;
+      overflow: auto;
+    }
+
+    .progress {
+      width: 100%;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+
+    .bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #3dd5be, #ffa866);
+      transition: width 0.25s ease;
+    }
+
+    .floating-text {
+      position: absolute;
+      color: #fff;
+      font-weight: 800;
+      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+      animation: popFloat 0.8s ease forwards;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    @keyframes popFloat {
+      0% {
+        opacity: 0;
+        transform: translate(-50%, 0) scale(0.6);
+      }
+
+      30% {
+        opacity: 1;
+        transform: translate(-50%, -8px) scale(1);
+      }
+
+      100% {
+        opacity: 0;
+        transform: translate(-50%, -30px) scale(0.85);
+      }
+    }
+
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 26px;
+      transform: translateX(-50%);
+      padding: 10px 14px;
+      background: rgba(255, 241, 251, 0.94);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      font-size: 13px;
+      color: #7a4d83;
+      z-index: 30;
+      animation: toastIn 2.4s ease forwards;
+      pointer-events: none;
+    }
+
+    @keyframes toastIn {
+      0% {
+        opacity: 0;
+        transform: translateX(-50%) translateY(8px);
+      }
+
+      15%,
+      70% {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
+
+      100% {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-6px);
+      }
+    }
+
+    .modal {
+      position: fixed;
+      inset: 0;
+      display: none;
+      place-items: center;
+      background: rgba(2, 5, 12, 0.7);
+      z-index: 40;
+      padding: 12px;
+    }
+
+    .modal.show {
+      display: grid;
+    }
+
+    .panel {
+      width: min(540px, 100%);
+      background: #fff6fc;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: var(--shadow);
+    }
+
+    .panel h3 {
+      margin: 0 0 8px;
+    }
+
+    .mono {
+      font-family: Consolas, "SF Mono", monospace;
+    }
+
+    .tiny {
+      color: var(--sub);
+      font-size: 12px;
+    }
+
+    .center {
+      text-align: center;
+    }
+
+    .shop-grid,
+    .theme-grid,
+    .level-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 10px;
+    }
+
+    .skin-card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px;
+      background: rgba(255, 252, 255, 0.8);
+      display: grid;
+      gap: 8px;
+    }
+
+    .preview {
+      border-radius: 8px;
+      height: 46px;
+      border: 1px dashed rgba(255, 255, 255, 0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      font-size: 18px;
+    }
+
+    .mode-controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .mode-btn.active {
+      border-color: #8cfbe8;
+      box-shadow: inset 0 0 0 1px rgba(140, 251, 232, 0.45);
+    }
+
+    .toggle {
+      display: inline-flex;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .toggle button {
+      border-radius: 0;
+      border: 0;
+      background: transparent;
+      color: var(--text);
+      min-width: 68px;
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .toggle button.active {
+      background: linear-gradient(135deg, var(--accent), #9af8e9);
+      color: #122121;
+    }
+
+    #victoryFx {
+      position: fixed;
+      inset: 0;
+      z-index: 55;
+      display: none;
+      pointer-events: none;
+      overflow: hidden;
+      background: radial-gradient(circle at center, rgba(255, 255, 255, 0.25), rgba(155, 72, 160, 0.2) 35%, rgba(10, 6, 20, 0.78) 100%);
+    }
+
+    #victoryFx.show {
+      display: block;
+      animation: fxPulse 1s ease-in-out infinite alternate;
+    }
+
+    .victory-glow {
+      position: absolute;
+      width: 52vmax;
+      height: 52vmax;
+      border-radius: 50%;
+      left: -12vmax;
+      top: -12vmax;
+      background: radial-gradient(circle, rgba(255, 86, 191, 0.75), rgba(255, 86, 191, 0));
+      filter: blur(10px);
+      animation: glowSpin 3s linear infinite;
+    }
+
+    .victory-glow.glow-2 {
+      left: auto;
+      top: auto;
+      right: -14vmax;
+      bottom: -14vmax;
+      background: radial-gradient(circle, rgba(107, 224, 255, 0.75), rgba(107, 224, 255, 0));
+      animation-direction: reverse;
+      animation-duration: 3.8s;
+    }
+
+    .victory-rainbow {
+      position: absolute;
+      inset: -40%;
+      background: conic-gradient(from 0deg, rgba(255, 90, 171, 0.22), rgba(255, 229, 120, 0.2), rgba(108, 235, 255, 0.22), rgba(187, 129, 255, 0.22), rgba(255, 90, 171, 0.22));
+      animation: rainbowSpin 4.2s linear infinite;
+      mix-blend-mode: screen;
+    }
+
+    #victoryBanner {
+      position: absolute;
+      left: 50%;
+      top: 18%;
+      transform: translateX(-50%);
+      color: #fff;
+      font-size: clamp(40px, 9vw, 110px);
+      font-weight: 900;
+      letter-spacing: 4px;
+      text-shadow:
+        0 0 12px rgba(255, 255, 255, 0.95),
+        0 0 28px rgba(255, 111, 202, 0.9),
+        0 0 56px rgba(116, 214, 255, 0.85);
+      animation: bannerBoom 1.05s ease-in-out infinite alternate;
+    }
+
+    #victoryConfetti {
+      position: absolute;
+      inset: 0;
+    }
+
+    .confetti {
+      position: absolute;
+      width: 12px;
+      height: 24px;
+      border-radius: 3px;
+      box-shadow: 0 0 12px rgba(255, 255, 255, 0.7);
+      animation-name: confettiFall;
+      animation-timing-function: linear;
+      animation-fill-mode: forwards;
+    }
+
+    @keyframes confettiFall {
+      from {
+        transform: translate3d(0, -10vh, 0) rotate(0deg) scale(1);
+        opacity: 1;
+      }
+
+      to {
+        transform: translate3d(var(--dx), 110vh, 0) rotate(var(--rot)) scale(0.7);
+        opacity: 0.08;
+      }
+    }
+
+    @keyframes fxPulse {
+      from { filter: saturate(1) brightness(1); }
+      to { filter: saturate(1.35) brightness(1.15); }
+    }
+
+    @keyframes glowSpin {
+      from { transform: rotate(0deg) scale(1); }
+      to { transform: rotate(360deg) scale(1.06); }
+    }
+
+    @keyframes rainbowSpin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes bannerBoom {
+      from { transform: translateX(-50%) scale(0.98); }
+      to { transform: translateX(-50%) scale(1.05); }
+    }
+
+    @media (max-width: 980px) {
+      .screen {
+        height: 100%;
+        width: 100%;
+      }
+
+      #menu .content,
+      #game .content {
+        grid-template-columns: 1fr;
+      }
+
+      .content {
+        padding: 10px;
+      }
+
+      #gameHud {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      #mobilePad {
+        display: grid;
+      }
+
+      #canvasWrap {
+        min-height: 46vh;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <section id="menu" class="screen active">
+      <header class="head">
+        <div>
+          <h1 class="title">蛇王 · 终极前端版</h1>
+          <p class="subtitle">7 大模式 · 8+ 道具 · 15 关 · 成就系统 · 电脑与手机双端可玩</p>
+        </div>
+        <div class="row">
+          <span class="chip">金币 <b id="coinVal">0</b></span>
+          <span class="chip">最高分 <b id="menuHigh">0</b></span>
+        </div>
+      </header>
+      <div class="content">
+        <div class="card">
+          <h3>开始与模式</h3>
+          <div id="modeList" class="mode-controls"></div>
+          <div class="split" style="margin-top: 10px;">
+            <div>
+              <label>地图尺寸</label>
+              <div id="mapSizeToggle" class="toggle" style="margin-top: 6px;"></div>
+            </div>
+            <div>
+              <label>当前关卡</label>
+              <div class="item" style="margin-top: 6px;">
+                <div>
+                  <b id="currentLevelText">第 1 关</b>
+                  <small id="levelHint">目标分数 100</small>
+                </div>
+                <button id="gotoLevels" class="secondary">关卡页</button>
+              </div>
+            </div>
+          </div>
+          <div class="grid-btns" style="margin-top: 10px;">
+            <button id="startBtn">开始游戏</button>
+            <button id="howBtn" class="secondary">玩法说明</button>
+            <button id="shopBtn" class="secondary">皮肤商城</button>
+            <button id="settingBtn" class="secondary">设置</button>
+            <button id="achievementBtn" class="secondary">成就</button>
+            <button id="boardBtn" class="secondary">排行榜</button>
+          </div>
+          <div class="item" style="margin-top: 10px;">
+            <div>
+              <b>今日任务</b>
+              <small id="dailyInfo">加载中...</small>
+            </div>
+            <button id="dailyClaim" class="secondary">领取奖励</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>实时数据概览</h3>
+          <div class="list" id="statsList"></div>
+          <h3>快速开局预设</h3>
+          <div class="list" id="presetList"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="game" class="screen">
+      <header class="head">
+        <div>
+          <h2 class="title" style="font-size: 24px;">游戏中</h2>
+          <p class="subtitle" id="modeLabel">模式：经典模式</p>
+        </div>
+        <div class="row">
+          <button id="pauseBtn" class="secondary">暂停</button>
+          <button id="restartBtn" class="secondary">重开</button>
+          <button id="backBtn" class="warn">返回菜单</button>
+        </div>
+      </header>
+      <div class="content">
+        <div class="play-wrap">
+          <div id="gameHud">
+            <div class="hud-cell"><span>分数</span><strong id="hudScore">0</strong></div>
+            <div class="hud-cell"><span>长度</span><strong id="hudLen">3</strong></div>
+            <div class="hud-cell"><span>速度</span><strong id="hudSpeed">1.0x</strong></div>
+            <div class="hud-cell"><span>剩余时间</span><strong id="hudTime">∞</strong></div>
+          </div>
+          <div id="canvasWrap">
+            <canvas id="gameCanvas"></canvas>
+            <div id="fxLayer"></div>
+          </div>
+          <div id="mobilePad">
+            <button class="empty"></button>
+            <button data-dir="up">↑</button>
+            <button class="empty"></button>
+            <button data-dir="left">←</button>
+            <button data-dir="down">↓</button>
+            <button data-dir="right">→</button>
+          </div>
+        </div>
+
+        <aside class="side-panel">
+          <div class="card">
+            <h3>道具状态</h3>
+            <div id="buffList" class="list"></div>
+          </div>
+          <div class="card">
+            <h3>关卡进度</h3>
+            <div class="item">
+              <div>
+                <b id="levelProgressTitle">第 1 关</b>
+                <small id="levelProgressDesc">目标：100 分</small>
+              </div>
+            </div>
+            <div class="progress"><div id="levelBar" class="bar"></div></div>
+            <p class="tiny" id="comboText">连击：x1</p>
+          </div>
+          <div class="card">
+            <h3>双人对战控制</h3>
+            <p class="tiny">P1：WASD / P2：方向键。移动端可点“切换控制对象”。</p>
+            <button id="switchControl" class="secondary">当前控制：P1</button>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="settings" class="screen">
+      <header class="head">
+        <h2 class="title" style="font-size: 24px;">设置</h2>
+        <button data-back="menu" class="secondary backMenu">返回</button>
+      </header>
+      <div class="content">
+        <div class="card">
+          <h3>音频与手感</h3>
+          <div class="row">
+            <label>音效开关</label>
+            <div id="soundToggle" class="toggle"></div>
+          </div>
+          <div class="row" style="margin-top: 8px;">
+            <label>背景音乐</label>
+            <div id="musicToggle" class="toggle"></div>
+          </div>
+          <div class="row" style="margin-top: 8px;">
+            <label>基础速度倍率</label>
+            <input id="baseSpeedInput" type="range" min="0.2" max="5.0" step="0.1" style="flex:1" />
+            <span id="baseSpeedText" class="mono">1.0x</span>
+          </div>
+          <div class="row" style="margin-top: 8px;">
+            <label>触控灵敏度</label>
+            <input id="touchInput" type="range" min="18" max="60" step="2" />
+            <span id="touchText" class="mono">30 px</span>
+          </div>
+        </div>
+        <div class="card">
+          <h3>地图主题</h3>
+          <div id="themeList" class="theme-grid"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="leaderboard" class="screen">
+      <header class="head">
+        <h2 class="title" style="font-size: 24px;">排行榜</h2>
+        <button data-back="menu" class="secondary backMenu">返回</button>
+      </header>
+      <div class="content">
+        <div class="card">
+          <h3>历史 Top 20</h3>
+          <div id="rankList" class="list"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="achievements" class="screen">
+      <header class="head">
+        <h2 class="title" style="font-size: 24px;">成就系统（20 项）</h2>
+        <button data-back="menu" class="secondary backMenu">返回</button>
+      </header>
+      <div class="content">
+        <div class="card">
+          <div id="achievementList" class="list"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="shop" class="screen">
+      <header class="head">
+        <h2 class="title" style="font-size: 24px;">皮肤商城</h2>
+        <button data-back="menu" class="secondary backMenu">返回</button>
+      </header>
+      <div class="content">
+        <div class="card">
+          <h3>蛇身皮肤</h3>
+          <div id="skinList" class="shop-grid"></div>
+        </div>
+        <div class="card">
+          <h3>食物皮肤</h3>
+          <div id="foodSkinList" class="shop-grid"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="levels" class="screen">
+      <header class="head">
+        <h2 class="title" style="font-size: 24px;">关卡选择（15 关）</h2>
+        <button data-back="menu" class="secondary backMenu">返回</button>
+      </header>
+      <div class="content">
+        <div class="card">
+          <div id="levelList" class="level-grid"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="gameOverModal" class="modal">
+    <div class="panel">
+      <h3 id="overTitle">游戏结束</h3>
+      <p id="overText" class="tiny">本局表现</p>
+      <div class="row">
+        <button id="againBtn">再来一局</button>
+        <button id="overMenuBtn" class="secondary">返回菜单</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="guideModal" class="modal">
+    <div class="panel">
+      <h3>新手说明</h3>
+      <p class="tiny">
+        1) 吃食物得分，普通食物默认 +10，连击与倍率道具会提高收益。<br />
+        2) 默认撞墙/撞自己会死亡；无敌护盾可免疫，穿墙道具可穿越边界。<br />
+        3) 电脑端：WASD / 方向键，空格暂停；手机端：滑动或虚拟方向键。<br />
+        4) 双人模式：P1(WASD) vs P2(方向键)。<br />
+        5) 每日任务与成就会奖励金币，可用于解锁皮肤。<br />
+      </p>
+      <button id="closeGuide">知道了</button>
+    </div>
+  </div>
+
+  <div id="victoryFx" aria-hidden="true">
+    <div class="victory-glow"></div>
+    <div class="victory-glow glow-2"></div>
+    <div class="victory-rainbow"></div>
+    <div id="victoryConfetti"></div>
+    <div id="victoryBanner">VICTORY</div>
+  </div>
+
+  <script>
+    (function () {
+      const STORAGE_KEY = "snake_ultimate_v1";
+      const canvas = document.getElementById("gameCanvas");
+      const ctx = canvas.getContext("2d");
+      const fxLayer = document.getElementById("fxLayer");
+
+      const MODES = [
+        { id: "classic", name: "经典模式", desc: "纯经典贪吃蛇" },
+        { id: "timed", name: "限时模式", desc: "固定时间冲击高分", limit: 90 },
+        { id: "obstacle", name: "障碍模式", desc: "固定 + 移动障碍" },
+        { id: "infinite", name: "无限模式", desc: "穿墙通行" },
+        { id: "duel", name: "PK模式", desc: "红蓝双蛇独立计分对抗" },
+        { id: "race", name: "竞速模式", desc: "强制高速挑战" },
+        { id: "boss", name: "BOSS 挑战", desc: "巨型 BOSS 障碍" }
+      ];
+
+      const ITEM_TYPES = [
+        { id: "speedUp", name: "加速", color: "#ff9f40", duration: 8 },
+        { id: "slowDown", name: "减速", color: "#67d5ff", duration: 8 },
+        { id: "shield", name: "护盾", color: "#6dff9e", duration: 10 },
+        { id: "phase", name: "穿墙", color: "#ffc5f3", duration: 12 },
+        { id: "multi2", name: "2倍分", color: "#ffe46a", duration: 10 },
+        { id: "multi3", name: "3倍分", color: "#ff7ab7", duration: 10 },
+        { id: "slim", name: "瘦身", color: "#b4ff5d", instant: true },
+        { id: "feast", name: "全屏食物", color: "#ffb470", instant: true },
+        { id: "clear", name: "清障", color: "#9ec8ff", instant: true },
+        { id: "freeze", name: "冰冻对手", color: "#a5f2ff", instant: true, duelOnly: true },
+        { id: "snipe", name: "落雷攻击", color: "#ffeb3b", instant: true, duelOnly: true }
+      ];
+
+      const THEMES = {
+        dark: {
+          label: "星际深渊",
+          bg: "radial-gradient(circle at 50% 50%, #1a1a2e, #0f0f1c)",
+          grid: "rgba(100, 200, 255, 0.08)",
+          food: "#00f0ff"
+        },
+        fresh: {
+          label: "薄荷糖果",
+          bg: "linear-gradient(135deg, #e0f7fa, #b2ebf2)",
+          grid: "rgba(0, 150, 136, 0.15)",
+          food: "#ff4081"
+        },
+        cyber: {
+          label: "赛博纪元",
+          bg: "linear-gradient(to bottom, #120e1f, #230833)",
+          grid: "rgba(255, 0, 255, 0.15)",
+          food: "#f50057"
+        },
+        pixel: {
+          label: "流金岁月",
+          bg: "radial-gradient(circle at 10% 20%, #2b1b17, #1c1010)",
+          grid: "rgba(255, 215, 0, 0.12)",
+          food: "#ffb300"
+        }
+      };
+
+      const snakeSkins = [
+        { id: "neon", name: "霓虹能量", price: 0, owned: true, style: ["#32ffd2", "#18b69d"] },
+        { id: "tech", name: "科技脉冲", price: 120, style: ["#7ecbff", "#376dfa"] },
+        { id: "cartoon", name: "卡通糖果", price: 160, style: ["#ffd05e", "#ff7b66"] },
+        { id: "gradient", name: "流光渐变", price: 200, style: ["#b898ff", "#f777c8"] },
+        { id: "animal", name: "灵兽图腾", price: 260, style: ["#8ef26a", "#4db96f"] },
+        { id: "mecha", name: "机甲装甲", price: 320, style: ["#d9e1ef", "#8f99ad"] }
+      ];
+
+      const foodSkins = [
+        { id: "fruit", name: "水果", price: 0, owned: true, emoji: "🍎" },
+        { id: "snack", name: "零食", price: 100, emoji: "🍩" },
+        { id: "gem", name: "宝石", price: 180, emoji: "💎" },
+        { id: "energy", name: "能量球", price: 220, emoji: "⚡" }
+      ];
+
+      function makeLevels() {
+        const levels = [];
+        for (let i = 1; i <= 15; i += 1) {
+          levels.push({
+            id: i,
+            target: 80 + i * 20,
+            speedMul: 1 + i * 0.04,
+            obstacleCount: Math.floor(i * 0.9),
+            shrink: i > 10 ? 2 : i > 6 ? 1 : 0,
+            unlockText: i <= 3 ? "基础训练" : i <= 6 ? "新增障碍" : i <= 9 ? "新增道具" : i <= 12 ? "新增皮肤" : "终极地图"
+          });
+        }
+        return levels;
+      }
+
+      const LEVELS = makeLevels();
+
+      const ACHIEVEMENTS = [
+        ["first_game", "初次启程", "完成 1 局游戏"],
+        ["score_200", "小试牛刀", "单局达到 200 分"],
+        ["score_500", "火力全开", "单局达到 500 分"],
+        ["len_20", "长蛇阵", "蛇身长度达到 20"],
+        ["len_40", "巨龙现世", "蛇身长度达到 40"],
+        ["combo_5", "连击达人", "触发 5 连击"],
+        ["combo_10", "连击宗师", "触发 10 连击"],
+        ["m_classic", "经典征服", "经典模式通关一次"],
+        ["m_timed", "时间猎手", "限时模式通关一次"],
+        ["m_obstacle", "障碍突围", "障碍模式通关一次"],
+        ["m_infinite", "无尽旅者", "无限模式通关一次"],
+        ["m_duel", "双人对决", "双人模式获胜一次"],
+        ["m_race", "极速狂飙", "竞速模式通关一次"],
+        ["m_boss", "BOSS 击破", "BOSS 模式击败 BOSS"],
+        ["item_20", "道具收藏家", "累计拾取 20 次道具"],
+        ["games_20", "久经沙场", "累计游玩 20 局"],
+        ["total_3000", "分数富翁", "累计总分 3000"],
+        ["unlock_3_skin", "时尚达人", "解锁 3 套蛇皮肤"],
+        ["all_daily", "今日全勤", "同一天完成 3 个每日任务"],
+        ["level_15", "终极大师", "解锁第 15 关"]
+      ].map((x) => ({ id: x[0], title: x[1], desc: x[2], reward: 30 }));
+
+      const defaults = {
+        selectedMode: "classic",
+        mapSize: "m",
+        selectedLevel: 1,
+        coins: 0,
+        highScore: 0,
+        settings: {
+          sound: true,
+          music: true,
+          baseSpeed: 1,
+          touchThreshold: 30,
+          theme: "dark"
+        },
+        unlock: {
+          level: 1,
+          snakeSkins: ["neon"],
+          foodSkins: ["fruit"],
+          activeSnakeSkin: "neon",
+          activeFoodSkin: "fruit"
+        },
+        stats: {
+          games: 0,
+          totalScore: 0,
+          bestLength: 3,
+          itemPicked: 0,
+          modeWins: {}
+        },
+        achievements: {},
+        leaderboard: [],
+        daily: {
+          key: "",
+          tasks: [],
+          claimed: false
+        }
+      };
+
+      const state = loadData();
+
+      let game = null;
+      let activeScreen = "menu";
+      let rafId = 0;
+      let controlTarget = "p1";
+      let touchStart = null;
+      let victoryFxTimer = 0;
+      let victoryBurstTimer = 0;
+
+      const Audio = createAudio();
+
+      function loadData() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (!raw) return structuredClone(defaults);
+          const parsed = JSON.parse(raw);
+          return mergeDeep(structuredClone(defaults), parsed);
+        } catch (err) {
+          return structuredClone(defaults);
+        }
+      }
+
+      function saveData() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      }
+
+      function mergeDeep(base, ext) {
+        Object.keys(ext || {}).forEach((key) => {
+          const v = ext[key];
+          if (v && typeof v === "object" && !Array.isArray(v)) {
+            if (!base[key] || typeof base[key] !== "object") base[key] = {};
+            mergeDeep(base[key], v);
+          } else {
+            base[key] = v;
+          }
+        });
+        return base;
+      }
+
+      function createAudio() {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        let bgmTimer = 0;
+
+        function beep(freq, dur, type, gain) {
+          if (!state.settings.sound) return;
+          const osc = audioCtx.createOscillator();
+          const g = audioCtx.createGain();
+          osc.type = type || "sine";
+          osc.frequency.value = freq;
+          g.gain.value = gain || 0.03;
+          osc.connect(g).connect(audioCtx.destination);
+          osc.start();
+          osc.stop(audioCtx.currentTime + dur);
+        }
+
+        function toneEat() {
+          beep(660, 0.08, "sine", 0.06);
+          setTimeout(() => beep(880, 0.06, "sine", 0.04), 40);
+          setTimeout(() => beep(1100, 0.08, "triangle", 0.03), 80);
+        }
+
+        function toneDead() {
+          beep(220, 0.18, "sawtooth", 0.06);
+          setTimeout(() => beep(140, 0.2, "sawtooth", 0.05), 80);
+          setTimeout(() => beep(100, 0.25, "sawtooth", 0.04), 160);
+        }
+
+        function toneItem() {
+          beep(440, 0.08, "square", 0.04);
+          setTimeout(() => beep(660, 0.08, "square", 0.04), 60);
+          setTimeout(() => beep(880, 0.12, "triangle", 0.04), 120);
+        }
+
+        function toneLevel() {
+          [550, 660, 880, 1100].forEach((f, i) => setTimeout(() => beep(f, 0.1, "triangle", 0.05), i * 80));
+        }
+
+        function startMusic() {
+          stopMusic();
+          if (!state.settings.music) return;
+          let beat = 0;
+          bgmTimer = setInterval(() => {
+            const melody = [330, 392, 440, 493, 523, 493, 440, 392];
+            const bass = [165, 0, 220, 0, 261, 0, 220, 0];
+            if (melody[beat % 8]) beep(melody[beat % 8], 0.12, "sine", 0.012);
+            if (bass[beat % 8]) beep(bass[beat % 8], 0.15, "triangle", 0.015);
+            beat += 1;
+          }, 240);
+        }
+
+        function stopMusic() {
+          if (bgmTimer) clearInterval(bgmTimer);
+          bgmTimer = 0;
+        }
+
+        return { toneEat, toneDead, toneItem, toneLevel, startMusic, stopMusic };
+      }
+
+      function switchScreen(id) {
+        document.querySelectorAll(".screen").forEach((el) => {
+          el.classList.toggle("active", el.id === id);
+        });
+        activeScreen = id;
+      }
+
+      function toast(text) {
+        const div = document.createElement("div");
+        div.className = "toast";
+        div.textContent = text;
+        document.body.appendChild(div);
+        setTimeout(() => div.remove(), 2400);
+      }
+
+      function floatingText(x, y, text, color) {
+        const div = document.createElement("div");
+        div.className = "floating-text";
+        div.style.left = x + "px";
+        div.style.top = y + "px";
+        div.style.color = color || "#fff";
+        div.textContent = text;
+        fxLayer.appendChild(div);
+        setTimeout(() => div.remove(), 820);
+      }
+
+      function setupMenu() {
+        const modeList = document.getElementById("modeList");
+        modeList.innerHTML = "";
+        MODES.forEach((m) => {
+          const b = document.createElement("button");
+          b.className = "secondary mode-btn" + (state.selectedMode === m.id ? " active" : "");
+          b.textContent = m.name;
+          b.title = m.desc;
+          b.onclick = () => {
+            state.selectedMode = m.id;
+            saveData();
+            setupMenu();
+          };
+          modeList.appendChild(b);
+        });
+
+        const mapToggle = document.getElementById("mapSizeToggle");
+        mapToggle.innerHTML = "";
+        [["s", "小图"], ["m", "中图"], ["l", "大图"], ["f", "全屏"]].forEach((x) => {
+          const b = document.createElement("button");
+          b.textContent = x[1];
+          b.className = state.mapSize === x[0] ? "active" : "";
+          b.onclick = () => {
+            state.mapSize = x[0];
+            saveData();
+            setupMenu();
+          };
+          mapToggle.appendChild(b);
+        });
+
+        const lv = LEVELS[state.selectedLevel - 1];
+        document.getElementById("currentLevelText").textContent = "第 " + state.selectedLevel + " 关";
+        document.getElementById("levelHint").textContent = "目标分数 " + lv.target + " · " + lv.unlockText;
+
+        document.getElementById("coinVal").textContent = state.coins;
+        document.getElementById("menuHigh").textContent = state.highScore;
+
+        renderStats();
+        renderPresets();
+        renderDaily();
+      }
+
+      function renderStats() {
+        const list = document.getElementById("statsList");
+        const stats = state.stats;
+        const data = [
+          ["总游戏次数", stats.games],
+          ["历史最高分", state.highScore],
+          ["最长蛇身", stats.bestLength],
+          ["累计总分", stats.totalScore],
+          ["已解锁关卡", state.unlock.level + " / 15"],
+          ["已完成成就", Object.keys(state.achievements).filter((k) => state.achievements[k]).length + " / 20"]
+        ];
+        list.innerHTML = data
+          .map((d) => `<div class="item"><b>${d[0]}</b><span class="tag">${d[1]}</span></div>`)
+          .join("");
+      }
+
+      function renderPresets() {
+        const presets = [
+          { mode: "classic", level: 1, label: "新手热身" },
+          { mode: "race", level: Math.min(state.unlock.level, 6), label: "极速挑战" },
+          { mode: "boss", level: Math.min(state.unlock.level, 12), label: "BOSS 战" }
+        ];
+        const list = document.getElementById("presetList");
+        list.innerHTML = "";
+        presets.forEach((p) => {
+          const row = document.createElement("div");
+          row.className = "item";
+          row.innerHTML = `<div><b>${p.label}</b><small>${getModeName(p.mode)} · 第 ${p.level} 关</small></div>`;
+          const bt = document.createElement("button");
+          bt.className = "secondary";
+          bt.textContent = "启动";
+          bt.onclick = () => {
+            state.selectedMode = p.mode;
+            state.selectedLevel = p.level;
+            saveData();
+            startGame();
+          };
+          row.appendChild(bt);
+          list.appendChild(row);
+        });
+      }
+
+      function renderDaily() {
+        syncDailyTasks();
+        const done = state.daily.tasks.filter((x) => x.done).length;
+        document.getElementById("dailyInfo").textContent = `已完成 ${done}/3 · 完成全部可触发成就`;
+      }
+
+      function getModeName(id) {
+        const m = MODES.find((x) => x.id === id);
+        return m ? m.name : id;
+      }
+
+      function syncDailyTasks() {
+        const today = new Date();
+        const key = `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`;
+        if (state.daily.key === key && state.daily.tasks.length === 3) return;
+        state.daily.key = key;
+        state.daily.claimed = false;
+        const seed = Number(String(today.getFullYear()) + String(today.getMonth() + 1).padStart(2, "0") + String(today.getDate()).padStart(2, "0"));
+        const tasks = [
+          { id: "d_score", title: "单局达到 " + (100 + (seed % 4) * 50) + " 分", target: 100 + (seed % 4) * 50, type: "score", done: false, progress: 0 },
+          { id: "d_eat", title: "吃到 " + (8 + (seed % 5)) + " 个食物", target: 8 + (seed % 5), type: "food", done: false, progress: 0 },
+          { id: "d_item", title: "拾取 " + (2 + (seed % 3)) + " 个道具", target: 2 + (seed % 3), type: "item", done: false, progress: 0 }
+        ];
+        state.daily.tasks = tasks;
+        saveData();
+      }
+
+      function renderSettings() {
+        renderToggle("soundToggle", state.settings.sound, (v) => {
+          state.settings.sound = v;
+          saveData();
+        });
+        renderToggle("musicToggle", state.settings.music, (v) => {
+          state.settings.music = v;
+          saveData();
+          if (v) Audio.startMusic();
+          else Audio.stopMusic();
+        });
+
+        const baseInput = document.getElementById("baseSpeedInput");
+        baseInput.value = state.settings.baseSpeed;
+        document.getElementById("baseSpeedText").textContent = Number(baseInput.value).toFixed(1) + "x";
+        baseInput.oninput = (e) => {
+          state.settings.baseSpeed = Number(e.target.value);
+          document.getElementById("baseSpeedText").textContent = Number(e.target.value).toFixed(1) + "x";
+          saveData();
+        };
+
+        const touchInput = document.getElementById("touchInput");
+        touchInput.value = state.settings.touchThreshold;
+        document.getElementById("touchText").textContent = touchInput.value + " px";
+        touchInput.oninput = (e) => {
+          state.settings.touchThreshold = Number(e.target.value);
+          document.getElementById("touchText").textContent = e.target.value + " px";
+          saveData();
+        };
+
+        const list = document.getElementById("themeList");
+        list.innerHTML = "";
+        Object.entries(THEMES).forEach(([id, t]) => {
+          const card = document.createElement("div");
+          card.className = "skin-card";
+          card.innerHTML = `<b>${t.label}</b><div class="preview" style="background:${t.bg};color:${t.food}">◼ ◼ ◼</div>`;
+          const bt = document.createElement("button");
+          bt.className = state.settings.theme === id ? "" : "secondary";
+          bt.textContent = state.settings.theme === id ? "已应用" : "应用";
+          bt.onclick = () => {
+            state.settings.theme = id;
+            applyThemeVars();
+            saveData();
+            renderSettings();
+          };
+          card.appendChild(bt);
+          list.appendChild(card);
+        });
+      }
+
+      function renderToggle(id, on, cb) {
+        const el = document.getElementById(id);
+        el.innerHTML = "";
+        [
+          ["开", true],
+          ["关", false]
+        ].forEach((x) => {
+          const b = document.createElement("button");
+          b.textContent = x[0];
+          b.className = on === x[1] ? "active" : "";
+          b.onclick = () => cb(x[1]);
+          el.appendChild(b);
+        });
+      }
+
+      function renderLeaderboard() {
+        const list = document.getElementById("rankList");
+        if (!state.leaderboard.length) {
+          list.innerHTML = '<div class="item"><b>暂无记录</b><span class="tag">先玩一局吧</span></div>';
+          return;
+        }
+        list.innerHTML = state.leaderboard
+          .slice(0, 20)
+          .map(
+            (x, i) =>
+              `<div class="item"><div><b>#${i + 1} ${x.score} 分</b><small>${x.mode} · 第${x.level}关 · 长度${x.length} · ${x.time}</small></div><span class="tag">${x.win ? "通关" : "失败"}</span></div>`
+          )
+          .join("");
+      }
+
+      function renderAchievements() {
+        const list = document.getElementById("achievementList");
+        list.innerHTML = "";
+        ACHIEVEMENTS.forEach((a) => {
+          const unlocked = !!state.achievements[a.id];
+          const row = document.createElement("div");
+          row.className = "item" + (unlocked ? "" : " locked");
+          row.innerHTML = `<div><b>${a.title}</b><small>${a.desc}</small></div><span class="tag">${unlocked ? "已解锁" : "奖励" + a.reward + "币"}</span>`;
+          list.appendChild(row);
+        });
+      }
+
+      function renderShop() {
+        const skins = mergeSkins();
+        const skinList = document.getElementById("skinList");
+        skinList.innerHTML = "";
+        skins.forEach((s) => {
+          const owned = state.unlock.snakeSkins.includes(s.id);
+          const active = state.unlock.activeSnakeSkin === s.id;
+          const card = document.createElement("div");
+          card.className = "skin-card" + (owned ? "" : " locked");
+          card.innerHTML = `<b>${s.name}</b><div class="preview" style="background:linear-gradient(120deg,${s.style[0]},${s.style[1]})">⬤ ⬤ ⬤</div><small class="tiny">${owned ? "已拥有" : s.price + " 金币"}</small>`;
+          const bt = document.createElement("button");
+          bt.className = active ? "" : "secondary";
+          bt.textContent = active ? "使用中" : owned ? "使用" : "购买";
+          bt.onclick = () => {
+            if (!owned) {
+              if (state.coins < s.price) return toast("金币不足");
+              state.coins -= s.price;
+              state.unlock.snakeSkins.push(s.id);
+              toast("购买成功：" + s.name);
+            }
+            state.unlock.activeSnakeSkin = s.id;
+            checkAchievement("unlock_3_skin", state.unlock.snakeSkins.length >= 3);
+            saveData();
+            setupMenu();
+            renderShop();
+          };
+          card.appendChild(bt);
+          skinList.appendChild(card);
+        });
+
+        const foods = mergeFoodSkins();
+        const foodList = document.getElementById("foodSkinList");
+        foodList.innerHTML = "";
+        foods.forEach((f) => {
+          const owned = state.unlock.foodSkins.includes(f.id);
+          const active = state.unlock.activeFoodSkin === f.id;
+          const card = document.createElement("div");
+          card.className = "skin-card" + (owned ? "" : " locked");
+          card.innerHTML = `<b>${f.name}</b><div class="preview">${f.emoji} ${f.emoji} ${f.emoji}</div><small class="tiny">${owned ? "已拥有" : f.price + " 金币"}</small>`;
+          const bt = document.createElement("button");
+          bt.className = active ? "" : "secondary";
+          bt.textContent = active ? "使用中" : owned ? "使用" : "购买";
+          bt.onclick = () => {
+            if (!owned) {
+              if (state.coins < f.price) return toast("金币不足");
+              state.coins -= f.price;
+              state.unlock.foodSkins.push(f.id);
+              toast("购买成功：" + f.name);
+            }
+            state.unlock.activeFoodSkin = f.id;
+            saveData();
+            setupMenu();
+            renderShop();
+          };
+          card.appendChild(bt);
+          foodList.appendChild(card);
+        });
+      }
+
+      function renderLevels() {
+        const list = document.getElementById("levelList");
+        list.innerHTML = "";
+        LEVELS.forEach((l) => {
+          const unlocked = l.id <= state.unlock.level;
+          const card = document.createElement("div");
+          card.className = "skin-card" + (unlocked ? "" : " locked");
+          card.innerHTML = `<b>第 ${l.id} 关</b><small class="tiny">目标 ${l.target} 分</small><small class="tiny">${l.unlockText}</small>`;
+          const bt = document.createElement("button");
+          bt.className = l.id === state.selectedLevel ? "" : "secondary";
+          bt.textContent = l.id === state.selectedLevel ? "已选择" : unlocked ? "选择" : "未解锁";
+          bt.onclick = () => {
+            if (!unlocked) return;
+            state.selectedLevel = l.id;
+            saveData();
+            renderLevels();
+            setupMenu();
+          };
+          card.appendChild(bt);
+          list.appendChild(card);
+        });
+      }
+
+      function mergeSkins() {
+        return snakeSkins.map((s) => ({ ...s, owned: state.unlock.snakeSkins.includes(s.id) || s.price === 0 }));
+      }
+
+      function mergeFoodSkins() {
+        return foodSkins.map((f) => ({ ...f, owned: state.unlock.foodSkins.includes(f.id) || f.price === 0 }));
+      }
+
+      function applyThemeVars() {
+        const t = THEMES[state.settings.theme] || THEMES.dark;
+        document.getElementById("canvasWrap").style.background = t.bg;
+      }
+
+      function mapBySize() {
+        if (state.mapSize === "s") return { cols: 24, rows: 18, tile: 24 };
+        if (state.mapSize === "l") return { cols: 45, rows: 30, tile: 18 };
+        if (state.mapSize === "f") {
+          const w = document.getElementById("canvasWrap").clientWidth || window.innerWidth;
+          const h = document.getElementById("canvasWrap").clientHeight || window.innerHeight;
+          const tile = 18;
+          return { cols: Math.floor(w / tile), rows: Math.floor(h / tile), tile };
+        }
+        return { cols: 30, rows: 22, tile: 20 };
+      }
+
+      function startGame() {
+        switchScreen("game");
+        document.getElementById("modeLabel").textContent = "模式：" + getModeName(state.selectedMode);
+        initGameState();
+        runLoop();
+      }
+
+      function initGameState() {
+        cancelAnimationFrame(rafId);
+        const map = mapBySize();
+        const level = LEVELS[state.selectedLevel - 1];
+        const cols = Math.max(16, map.cols - level.shrink * 2);
+        const rows = Math.max(12, map.rows - level.shrink * 2);
+        const tile = map.tile;
+
+        // 按画布容器大小动态缩放，保持手机端显示完整。
+        resizeCanvas(cols, rows, tile);
+
+        const center = { x: Math.floor(cols / 2), y: Math.floor(rows / 2) };
+
+        game = {
+          map: { cols, rows, tile },
+          level,
+          mode: state.selectedMode,
+          score: 0,
+          timeLeft: state.selectedMode === "timed" ? MODES.find((m) => m.id === "timed").limit : Infinity,
+          isPaused: false,
+          isOver: false,
+          speedBase: 7.5 * state.settings.baseSpeed,
+          speedMul: level.speedMul,
+          combo: 1,
+          comboTimer: 0,
+          lastEatAt: 0,
+          buffs: {},
+          food: [],
+          items: [],
+          obstacles: [],
+          movingObstacles: [],
+          vanishObstacles: [],
+          boss: null,
+          controlP1: { x: 1, y: 0 },
+          controlP2: { x: -1, y: 0 },
+          p1: {
+            id: "p1",
+            alive: true,
+            lives: 5,
+            invincible: 0,
+            score: 0,
+            combo: 1,
+            comboTimer: 0,
+            lastEatAt: 0,
+            body: [center, { x: center.x - 1, y: center.y }, { x: center.x - 2, y: center.y }],
+            dir: { x: 1, y: 0 },
+            nextDir: { x: 1, y: 0 },
+            color: getSnakeColors().main,
+            shield: false,
+            phase: state.selectedMode === "infinite"
+          },
+          p2: {
+            id: "p2",
+            alive: state.selectedMode === "duel",
+            lives: 5,
+            invincible: 0,
+            score: 0,
+            combo: 1,
+            comboTimer: 0,
+            lastEatAt: 0,
+            body: [
+              { x: center.x, y: center.y + 5 },
+              { x: center.x + 1, y: center.y + 5 },
+              { x: center.x + 2, y: center.y + 5 }
+            ],
+            dir: { x: -1, y: 0 },
+            nextDir: { x: -1, y: 0 },
+            color: { head: "#ff6f76", body: "#da3949" },
+            shield: false,
+            phase: false
+          },
+          freezeTimerP1: 0,
+          freezeTimerP2: 0,
+          ticks: 0,
+          frameAcc: 0,
+          lastTs: performance.now(),
+          win: false,
+          winner: ""
+        };
+
+        seedFoods(3);
+        initObstacles();
+        if (game.mode === "boss") spawnBoss();
+        updateHud();
+        applyThemeVars();
+        toast("第 " + state.selectedLevel + " 关开始");
+      }
+
+      function resizeCanvas(cols, rows, tile) {
+        const wrap = document.getElementById("canvasWrap");
+        const maxW = wrap.clientWidth;
+        const maxH = wrap.clientHeight;
+        const ratio = Math.min(maxW / (cols * tile), maxH / (rows * tile));
+        const finalTile = Math.max(12, Math.floor(tile * ratio));
+        canvas.width = cols * finalTile;
+        canvas.height = rows * finalTile;
+        if (game && game.map) game.map.tile = finalTile;
+      }
+
+      function seedFoods(n) {
+        for (let i = 0; i < n; i += 1) addFood();
+      }
+
+      function addFood() {
+        const p = randomFreeCell();
+        if (!p) return;
+        game.food.push(p);
+      }
+
+      function addItem() {
+        const p = randomFreeCell();
+        if (!p) return;
+        const validItems = ITEM_TYPES.filter((t) => !t.duelOnly || game.mode === "duel");
+        const t = validItems[Math.floor(Math.random() * validItems.length)];
+        game.items.push({ x: p.x, y: p.y, type: t.id, ttl: 14 + Math.random() * 6 });
+      }
+
+      function initObstacles() {
+        game.obstacles = [];
+        game.movingObstacles = [];
+        game.vanishObstacles = [];
+        const count = game.mode === "obstacle" || game.mode === "boss" ? game.level.obstacleCount + 4 : game.level.obstacleCount;
+        // 优先生成连体墙段，让墙体更明显；经典低关卡保持干净地图。
+        const linkedWallCount = game.mode === "obstacle" || game.mode === "boss" ? count + 6 : count;
+        if (linkedWallCount > 0) spawnConnectedWalls(linkedWallCount, 3, 8, game.obstacles);
+        if (game.mode === "obstacle") {
+          spawnConnectedWalls(Math.max(8, Math.floor(count * 0.8)), 2, 5, game.obstacles);
+          for (let i = 0; i < Math.max(1, Math.floor(count / 3)); i += 1) {
+            const p = randomFreeCell();
+            if (!p) continue;
+            game.movingObstacles.push({ ...p, dx: Math.random() > 0.5 ? 1 : -1, dy: Math.random() > 0.5 ? 1 : -1 });
+          }
+          for (let i = 0; i < Math.max(2, Math.floor(count / 2)); i += 1) {
+            const p = randomFreeCell();
+            if (!p) continue;
+            game.vanishObstacles.push({ ...p, ttl: 6 + Math.random() * 4 });
+          }
+        }
+      }
+
+      function spawnConnectedWalls(blockCount, minLen, maxLen, bucket) {
+        let placed = 0;
+        let guard = 0;
+        while (placed < blockCount && guard < blockCount * 30) {
+          guard += 1;
+          const start = randomFreeCell();
+          if (!start) break;
+
+          const dir = [
+            { x: 1, y: 0 },
+            { x: -1, y: 0 },
+            { x: 0, y: 1 },
+            { x: 0, y: -1 }
+          ][Math.floor(Math.random() * 4)];
+
+          const len = Math.min(maxLen, Math.max(minLen, Math.floor(minLen + Math.random() * (maxLen - minLen + 1))));
+          let cx = start.x;
+          let cy = start.y;
+          for (let i = 0; i < len && placed < blockCount; i += 1) {
+            if (cx <= 0 || cx >= game.map.cols - 1 || cy <= 0 || cy >= game.map.rows - 1) break;
+            if (!occupied(cx, cy)) {
+              bucket.push({ x: cx, y: cy });
+              placed += 1;
+            }
+            cx += dir.x;
+            cy += dir.y;
+          }
+        }
+      }
+
+      function spawnBoss() {
+        const x = Math.floor(game.map.cols * 0.65);
+        const y = Math.floor(game.map.rows * 0.35);
+        game.boss = {
+          hp: 12 + Math.floor(game.level.id * 0.6),
+          body: [
+            { x, y },
+            { x: x + 1, y },
+            { x, y: y + 1 },
+            { x: x + 1, y: y + 1 },
+            { x, y: y + 2 },
+            { x: x + 1, y: y + 2 }
+          ],
+          dir: 1,
+          cooldown: 0
+        };
+      }
+
+      function randomFreeCell() {
+        for (let i = 0; i < 260; i += 1) {
+          const p = {
+            x: Math.floor(Math.random() * game.map.cols),
+            y: Math.floor(Math.random() * game.map.rows)
+          };
+          if (!occupied(p.x, p.y)) return p;
+        }
+        return null;
+      }
+
+      function occupied(x, y) {
+        const allBodies = [game.p1.body, game.p2.alive ? game.p2.body : []];
+        if (allBodies.some((body) => body.some((p) => p.x === x && p.y === y))) return true;
+        if (game.food.some((f) => f.x === x && f.y === y)) return true;
+        if (game.items.some((it) => it.x === x && it.y === y)) return true;
+        if (game.obstacles.some((o) => o.x === x && o.y === y)) return true;
+        if (game.movingObstacles.some((o) => o.x === x && o.y === y)) return true;
+        if (game.vanishObstacles.some((o) => o.x === x && o.y === y)) return true;
+        if (game.boss && game.boss.body.some((o) => o.x === x && o.y === y)) return true;
+        return false;
+      }
+
+      function runLoop() {
+        const loop = (ts) => {
+          if (!game || game.isOver) return;
+          const dt = (ts - game.lastTs) / 1000;
+          game.lastTs = ts;
+
+          if (!game.isPaused) {
+            update(dt);
+            draw();
+          }
+
+          rafId = requestAnimationFrame(loop);
+        };
+        rafId = requestAnimationFrame(loop);
+      }
+
+      function update(dt) {
+        game.ticks += 1;
+        const liveSpeed = currentSpeed();
+        const step = 1 / liveSpeed;
+        game.frameAcc += dt;
+
+        if (game.mode === "timed") {
+          game.timeLeft -= dt;
+          if (game.timeLeft <= 0) {
+            game.timeLeft = 0;
+            return endGame(false, "时间到");
+          }
+        }
+
+        updateBuffs(dt);
+        updateItems(dt);
+
+        if (game.mode === "obstacle") {
+          moveObstacles(dt);
+        }
+        if (game.mode === "boss") {
+          updateBoss(dt);
+        }
+
+        while (game.frameAcc >= step) {
+          tickMove();
+          game.frameAcc -= step;
+          if (game.isOver) break;
+        }
+
+        updateHud();
+        checkDaily();
+      }
+
+      function currentSpeed() {
+        let s = game.speedBase * game.speedMul;
+        s += Math.max(0, game.p1.body.length - 3) * 0.11;
+        if (game.mode === "race") s += 4.5;
+        if (game.buffs.speedUp) s *= 1.55;
+        if (game.buffs.slowDown) s *= 0.62;
+        return Math.min(24, s);
+      }
+
+      function updateBuffs(dt) {
+        Object.keys(game.buffs).forEach((k) => {
+          game.buffs[k] -= dt;
+          if (game.buffs[k] <= 0) delete game.buffs[k];
+        });
+        if (game.mode === "duel") {
+          game.p1.invincible = Math.max(0, (game.p1.invincible || 0) - dt);
+          game.p2.invincible = Math.max(0, (game.p2.invincible || 0) - dt);
+          game.freezeTimerP1 = Math.max(0, (game.freezeTimerP1 || 0) - dt);
+          game.freezeTimerP2 = Math.max(0, (game.freezeTimerP2 || 0) - dt);
+          game.p1.comboTimer = Math.max(0, (game.p1.comboTimer || 0) - dt);
+          game.p2.comboTimer = Math.max(0, (game.p2.comboTimer || 0) - dt);
+          if (game.p1.comboTimer <= 0) game.p1.combo = 1;
+          if (game.p2.comboTimer <= 0) game.p2.combo = 1;
+        }
+        game.p1.shield = !!game.buffs.shield;
+        game.p1.phase = game.mode === "infinite" || !!game.buffs.phase;
+        game.p2.shield = !!game.buffs.shield;
+        game.p2.phase = game.mode === "infinite" || !!game.buffs.phase;
+
+        if (game.comboTimer > 0) {
+          game.comboTimer -= dt;
+          if (game.comboTimer <= 0) game.combo = 1;
+        }
+      }
+
+      function updateItems(dt) {
+        game.items.forEach((it) => {
+          it.ttl -= dt;
+        });
+        game.items = game.items.filter((it) => it.ttl > 0);
+
+        if (Math.random() < 0.012 && game.items.length < 3) addItem();
+      }
+
+      function moveObstacles(dt) {
+        if (!game || game.isPaused) return;
+        if (game.ticks % 6 === 0) {
+          game.movingObstacles.forEach((o) => {
+            o.x += o.dx;
+            o.y += o.dy;
+            if (o.x <= 0 || o.x >= game.map.cols - 1) o.dx *= -1;
+            if (o.y <= 0 || o.y >= game.map.rows - 1) o.dy *= -1;
+            o.x = clamp(o.x, 0, game.map.cols - 1);
+            o.y = clamp(o.y, 0, game.map.rows - 1);
+          });
+        }
+
+        game.vanishObstacles.forEach((o) => {
+          o.ttl -= dt;
+          if (o.ttl < 0) {
+            const p = randomFreeCell();
+            if (p) {
+              o.x = p.x;
+              o.y = p.y;
+            }
+            o.ttl = 5 + Math.random() * 5;
+          }
+        });
+      }
+
+      function updateBoss(dt) {
+        if (!game.boss) return;
+        game.boss.cooldown -= dt;
+        if (game.boss.cooldown <= 0) {
+          game.boss.cooldown = 0.8;
+          const moveX = Math.random() > 0.5 ? game.boss.dir : 0;
+          const moveY = Math.random() > 0.5 ? game.boss.dir : -game.boss.dir;
+          game.boss.body.forEach((b) => {
+            b.x += moveX;
+            b.y += moveY;
+            if (b.x < 2 || b.x > game.map.cols - 3) game.boss.dir *= -1;
+            if (b.y < 2 || b.y > game.map.rows - 3) game.boss.dir *= -1;
+            b.x = clamp(b.x, 1, game.map.cols - 2);
+            b.y = clamp(b.y, 1, game.map.rows - 2);
+          });
+        }
+      }
+
+      function tickMove() {
+        if (game.freezeTimerP1 <= 0) moveSnake(game.p1, game.controlP1);
+        if (game.mode === "duel" && game.p2.alive && game.freezeTimerP2 <= 0) moveSnake(game.p2, game.controlP2);
+
+        handleDuelCollision();
+
+        if (game.mode !== "duel" && game.score >= game.level.target && !game.win) {
+          game.win = true;
+          finishLevel();
+        }
+      }
+
+      function moveSnake(player, control) {
+        if (!player.alive) return;
+        player.dir = { ...player.nextDir };
+        const head = { x: player.body[0].x + player.dir.x, y: player.body[0].y + player.dir.y };
+        const willGrow = game.food.some((f) => f.x === head.x && f.y === head.y);
+
+        // 全模式统一处理：撞墙不死亡，直接穿墙到对侧。
+        if (head.x < 0) head.x = game.map.cols - 1;
+        if (head.y < 0) head.y = game.map.rows - 1;
+        if (head.x >= game.map.cols) head.x = 0;
+        if (head.y >= game.map.rows) head.y = 0;
+
+        if (collidesBody(head, player.body, !willGrow)) {
+          if (game.mode === "duel") {
+            applyDuelDamage(player, player.id.toUpperCase() + " 自撞身体", false);
+            return;
+          }
+          if (player.shield) {
+            delete game.buffs.shield;
+            player.shield = false;
+          } else {
+            player.alive = false;
+            return onPlayerDead(player, "撞到自己");
+          }
+        }
+
+        if (collidesObstacle(head)) {
+          if (game.mode === "duel") {
+            applyDuelDamage(player, player.id.toUpperCase() + " 撞到障碍", false);
+            return;
+          }
+          if (player.shield) {
+            delete game.buffs.shield;
+            player.shield = false;
+          } else {
+            player.alive = false;
+            return onPlayerDead(player, "撞到障碍");
+          }
+        }
+
+        if (game.boss && game.boss.body.some((b) => b.x === head.x && b.y === head.y)) {
+          if (player.id === "p1") {
+            game.boss.hp -= 1;
+            floatingText((head.x + 0.5) * game.map.tile, (head.y + 0.5) * game.map.tile, "BOSS -1", "#ff9f5f");
+            if (game.boss.hp <= 0) {
+              game.score += 300;
+              checkAchievement("m_boss", true);
+              toast("BOSS 已击败！+300分");
+              game.boss = null;
+            }
+          }
+        }
+
+        player.body.unshift(head);
+
+        let grew = false;
+        const foodIndex = game.food.findIndex((f) => f.x === head.x && f.y === head.y);
+        if (foodIndex >= 0) {
+          game.food.splice(foodIndex, 1);
+          onEatFood(player, head);
+          grew = true;
+          addFood();
+          if (Math.random() < 0.22) addItem();
+        }
+
+        const itemIndex = game.items.findIndex((it) => it.x === head.x && it.y === head.y);
+        if (itemIndex >= 0) {
+          const item = game.items.splice(itemIndex, 1)[0];
+          applyItem(item, player);
+        }
+
+        if (!grew) player.body.pop();
+      }
+
+      function collidesBody(pos, body, skipTail) {
+        const end = skipTail ? body.length - 1 : body.length;
+        for (let i = 1; i < end; i += 1) {
+          if (body[i].x === pos.x && body[i].y === pos.y) return true;
+        }
+        return false;
+      }
+
+      function collidesObstacle(pos) {
+        if (game.obstacles.some((o) => o.x === pos.x && o.y === pos.y)) return true;
+        if (game.movingObstacles.some((o) => o.x === pos.x && o.y === pos.y)) return true;
+        if (game.vanishObstacles.some((o) => o.x === pos.x && o.y === pos.y)) return true;
+        return false;
+      }
+
+      function onEatFood(player, at) {
+        let scoreDelta = 10;
+        const now = performance.now();
+
+        if (game.mode === "duel") {
+          if (now - player.lastEatAt < 1100) {
+            player.combo += 1;
+          } else {
+            player.combo = 1;
+          }
+          player.lastEatAt = now;
+          player.comboTimer = 2.2;
+          if (player.combo >= 2) scoreDelta += player.combo * 2;
+          scoreDelta *= 10;
+        } else {
+          if (now - game.lastEatAt < 1100) {
+            game.combo += 1;
+          } else {
+            game.combo = 1;
+          }
+          game.lastEatAt = now;
+          game.comboTimer = 2.2;
+          if (game.combo >= 2) scoreDelta += game.combo * 2;
+        }
+
+        if (game.buffs.multi2) scoreDelta *= 2;
+        if (game.buffs.multi3) scoreDelta *= 3;
+
+        if (game.mode === "duel") {
+          player.score += scoreDelta;
+          game.score = Math.max(game.p1.score, game.p2.score);
+        } else {
+          game.score += scoreDelta;
+        }
+        game.p1.body.length && (state.stats.bestLength = Math.max(state.stats.bestLength, game.p1.body.length));
+
+        const px = (at.x + 0.5) * game.map.tile;
+        const py = (at.y + 0.5) * game.map.tile;
+        floatingText(px, py, `+${scoreDelta}`, "#ffe98a");
+        Audio.toneEat();
+
+        checkAchievement("combo_5", game.combo >= 5);
+        checkAchievement("combo_10", game.combo >= 10);
+      }
+
+      function applyItem(item, player) {
+        state.stats.itemPicked += 1;
+        checkAchievement("item_20", state.stats.itemPicked >= 20);
+
+        const def = ITEM_TYPES.find((x) => x.id === item.type);
+        if (!def) return;
+
+        if (def.instant) {
+          if (item.type === "slim") {
+            const keep = Math.max(3, Math.ceil(player.body.length / 2));
+            player.body = player.body.slice(0, keep);
+          }
+          if (item.type === "feast") {
+            for (let i = 0; i < 8; i += 1) addFood();
+          }
+          if (item.type === "clear") {
+            game.obstacles = [];
+            game.movingObstacles = [];
+            game.vanishObstacles = [];
+          }
+          if (item.type === "freeze" && game.mode === "duel") {
+             if (player.id === "p1") game.freezeTimerP2 = 3.0;
+             else game.freezeTimerP1 = 3.0;
+             toast(player.id.toUpperCase() + " 获得了冰冻，冻结对手！");
+          }
+          if (item.type === "snipe" && game.mode === "duel") {
+             const enemy = player.id === "p1" ? game.p2 : game.p1;
+             applyDuelDamage(enemy, player.id.toUpperCase() + " 的落雷击中", true);
+          }
+        } else {
+          game.buffs[item.type] = def.duration;
+        }
+
+        Audio.toneItem();
+        toast("获得道具：" + def.name);
+      }
+
+      function handleDuelCollision() {
+        if (game.mode !== "duel") return;
+        const h1 = game.p1.body[0];
+        const h2 = game.p2.body[0];
+
+        // 对撞：双方都扣 1 条命。
+        if (h1.x === h2.x && h1.y === h2.y) {
+          applyDuelDamage(game.p1, "P1 对撞 -1", true);
+          applyDuelDamage(game.p2, "P2 对撞 -1", true);
+        } else {
+          // 命中对方身体(不含头)：按新规则由自己扣血，双方长度保持不变。
+          const p1EatP2 = game.p2.body.slice(1).some((s) => s.x === h1.x && s.y === h1.y);
+          const p2EatP1 = game.p1.body.slice(1).some((s) => s.x === h2.x && s.y === h2.y);
+          if (p1EatP2) applyDuelDamage(game.p1, "P1 撞入 P2 身体", false);
+          if (p2EatP1) applyDuelDamage(game.p2, "P2 撞入 P1 身体", false);
+        }
+
+        if (game.p1.lives <= 0 || game.p2.lives <= 0) {
+          game.p1.alive = game.p1.lives > 0;
+          game.p2.alive = game.p2.lives > 0;
+          let winner = game.p1.alive ? "P1" : game.p2.alive ? "P2" : "平局";
+          if (winner === "平局") {
+            if (game.p1.score > game.p2.score) winner = "P1";
+            else if (game.p2.score > game.p1.score) winner = "P2";
+          }
+          game.winner = winner;
+          return endGame(winner === "P1", winner === "平局" ? "双方生命耗尽，平局" : winner + " 胜利");
+        }
+      }
+
+      function applyDuelDamage(victim, hint, force) {
+        if (!victim || !victim.alive) return;
+        if (!force && victim.invincible > 0) return;
+
+        victim.lives = Math.max(0, victim.lives - 1);
+        victim.invincible = 3;
+
+        const head = victim.body[0];
+        floatingText((head.x + 0.5) * game.map.tile, (head.y + 0.5) * game.map.tile, "-1命", "#ff8e8e");
+        triggerCuteShake();
+        toast(hint + `（${victim.id.toUpperCase()}剩余 ${victim.lives} 命）`);
+      }
+
+      function triggerCuteShake() {
+        const wrap = document.getElementById("canvasWrap");
+        wrap.classList.remove("shake");
+        void wrap.offsetWidth;
+        wrap.classList.add("shake");
+      }
+
+      function onPlayerDead(player, reason) {
+        if (game.mode === "duel") return;
+        endGame(false, reason + "，游戏结束");
+      }
+
+      function finishLevel() {
+        Audio.toneLevel();
+        const current = state.selectedLevel;
+        if (current < 15 && state.unlock.level <= current) {
+          state.unlock.level = current + 1;
+          checkAchievement("level_15", state.unlock.level >= 15);
+          toast("解锁第 " + state.unlock.level + " 关！");
+        }
+        endGame(true, "达成目标分数，通关成功！");
+      }
+
+      function endGame(win, reason) {
+        if (!game || game.isOver) return;
+        game.isOver = true;
+        cancelAnimationFrame(rafId);
+
+        Audio.toneDead();
+
+        const modeId = game.mode;
+        const modeName = getModeName(modeId);
+        const finalScore =
+          modeId === "duel"
+            ? Math.max(game.p1.score || 0, game.p2.score || 0)
+            : game.score;
+
+        state.stats.games += 1;
+        state.stats.totalScore += finalScore;
+        state.highScore = Math.max(state.highScore, finalScore);
+        state.coins += Math.floor(finalScore / 12) + (win ? 40 : 10);
+
+        if (win) {
+          state.stats.modeWins[modeId] = (state.stats.modeWins[modeId] || 0) + 1;
+        }
+
+        pushLeaderboard({
+          score: finalScore,
+          mode: modeName,
+          level: state.selectedLevel,
+          length: modeId === "duel" ? Math.max(game.p1.body.length, game.p2.body.length) : game.p1.body.length,
+          win,
+          time: new Date().toLocaleString()
+        });
+
+        checkAchievement("first_game", state.stats.games >= 1);
+        checkAchievement("games_20", state.stats.games >= 20);
+        checkAchievement("score_200", finalScore >= 200);
+        checkAchievement("score_500", finalScore >= 500);
+        checkAchievement("len_20", game.p1.body.length >= 20);
+        checkAchievement("len_40", game.p1.body.length >= 40);
+        checkAchievement("total_3000", state.stats.totalScore >= 3000);
+        checkAchievement("m_" + modeId, win);
+
+        saveData();
+        setupMenu();
+        renderAchievements();
+
+        showResult(win, reason);
+      }
+
+      function pushLeaderboard(r) {
+        state.leaderboard.push(r);
+        state.leaderboard.sort((a, b) => b.score - a.score);
+        state.leaderboard = state.leaderboard.slice(0, 60);
+      }
+
+      function showResult(win, reason) {
+        const modal = document.getElementById("gameOverModal");
+        document.getElementById("overTitle").textContent = win ? "胜利结算" : "游戏结束";
+        if (game.mode === "duel") {
+          document.getElementById("overText").innerHTML =
+            `${reason}<br>P1：${game.p1.score} 分 · ❤${game.p1.lives}<br>P2：${game.p2.score} 分 · ❤${game.p2.lives}<br>模式：PK模式 · 第${state.selectedLevel}关`;
+        } else {
+          document.getElementById("overText").innerHTML =
+            `${reason}<br>分数：${game.score} · 长度：${game.p1.body.length}<br>模式：${getModeName(game.mode)} · 第${state.selectedLevel}关`;
+        }
+        if (win || (game.mode === "duel" && game.winner && game.winner !== "平局")) {
+          startVictoryFx(game.mode === "duel" ? (game.winner === "平局" ? "平局" : `${game.winner} WIN`) : "VICTORY");
+        }
+        modal.classList.add("show");
+      }
+
+      function hideResult() {
+        stopVictoryFx();
+        document.getElementById("gameOverModal").classList.remove("show");
+      }
+
+      function startVictoryFx(text) {
+        stopVictoryFx();
+        const layer = document.getElementById("victoryFx");
+        const confettiWrap = document.getElementById("victoryConfetti");
+        const banner = document.getElementById("victoryBanner");
+        banner.textContent = text || "VICTORY";
+        layer.classList.add("show");
+
+        const spawnBurst = (count) => {
+          for (let i = 0; i < count; i += 1) {
+            const piece = document.createElement("span");
+            piece.className = "confetti";
+            piece.style.left = Math.random() * 100 + "%";
+            piece.style.top = "-10%";
+            piece.style.setProperty("--dx", (Math.random() * 240 - 120).toFixed(1) + "px");
+            piece.style.setProperty("--rot", (Math.random() * 1080 - 540).toFixed(0) + "deg");
+            piece.style.animationDuration = (2.2 + Math.random() * 1.8).toFixed(2) + "s";
+            piece.style.background = `hsl(${Math.floor(Math.random() * 360)} 95% 70%)`;
+            confettiWrap.appendChild(piece);
+            setTimeout(() => piece.remove(), 4300);
+          }
+        };
+
+        spawnBurst(220);
+        victoryBurstTimer = setInterval(() => spawnBurst(70), 520);
+        victoryFxTimer = setTimeout(() => stopVictoryFx(), 5200);
+      }
+
+      function stopVictoryFx() {
+        if (victoryFxTimer) clearTimeout(victoryFxTimer);
+        if (victoryBurstTimer) clearInterval(victoryBurstTimer);
+        victoryFxTimer = 0;
+        victoryBurstTimer = 0;
+        const layer = document.getElementById("victoryFx");
+        const confettiWrap = document.getElementById("victoryConfetti");
+        layer.classList.remove("show");
+        confettiWrap.innerHTML = "";
+      }
+
+      function updateHud() {
+        if (!game) return;
+        document.getElementById("hudScore").textContent =
+          game.mode === "duel"
+            ? `P1 ${game.p1.score} / P2 ${game.p2.score}`
+            : game.score;
+        document.getElementById("hudLen").textContent =
+          game.mode === "duel"
+            ? `P1 ${game.p1.body.length} / P2 ${game.p2.body.length}`
+            : game.p1.body.length;
+        document.getElementById("hudSpeed").textContent = currentSpeed().toFixed(1) + "x";
+        document.getElementById("hudTime").textContent =
+          game.mode === "duel"
+            ? `P1❤${game.p1.lives} / P2❤${game.p2.lives}`
+            : Number.isFinite(game.timeLeft)
+              ? Math.ceil(game.timeLeft) + "s"
+              : "∞";
+
+        const lvTarget = game.level.target;
+        document.getElementById("levelProgressTitle").textContent = "第 " + state.selectedLevel + " 关";
+        document.getElementById("levelProgressDesc").textContent = "目标：" + lvTarget + " 分";
+        document.getElementById("levelBar").style.width = Math.min(100, (game.score / lvTarget) * 100) + "%";
+        document.getElementById("comboText").textContent = "连击：x" + game.combo;
+        if (game.mode === "duel") {
+          document.getElementById("comboText").textContent =
+            `PK倍率：x10 · P1连击x${game.p1.combo} · P2连击x${game.p2.combo}`;
+        }
+
+        const buffs = document.getElementById("buffList");
+        const keys = Object.keys(game.buffs);
+        const duelExtra =
+          game.mode === "duel"
+            ? [
+                `P1 无敌 ${game.p1.invincible > 0 ? game.p1.invincible.toFixed(1) + "s" : "无"}`,
+                `P2 无敌 ${game.p2.invincible > 0 ? game.p2.invincible.toFixed(1) + "s" : "无"}`
+              ]
+            : [];
+
+        if (!keys.length && duelExtra.length === 0) {
+          buffs.innerHTML = '<div class="item"><b>暂无生效道具</b><span class="tag">0</span></div>';
+        } else {
+          const buffHtml = keys
+            .map((k) => {
+              const name = ITEM_TYPES.find((x) => x.id === k)?.name || k;
+              return `<div class="item"><b>${name}</b><span class="tag">${game.buffs[k].toFixed(1)}s</span></div>`;
+            })
+            .join("");
+          const duelHtml = duelExtra
+            .map((x) => `<div class="item"><b>${x}</b><span class="tag">对战</span></div>`)
+            .join("");
+          buffs.innerHTML = buffHtml + duelHtml;
+        }
+      }
+
+      function draw() {
+        if (!game) return;
+        const t = THEMES[state.settings.theme] || THEMES.dark;
+        const tile = game.map.tile;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // Canvas is transparent, showing the CSS background of #canvasWrap
+
+        drawGrid(t.grid);
+
+        drawObstacles();
+        drawFoods();
+        drawItems();
+        if (game.boss) drawBoss();
+
+        drawSnake(game.p1);
+        if (game.mode === "duel") drawSnake(game.p2);
+      }
+
+      function drawGrid(color) {
+        const tile = game.map.tile;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1;
+        for (let x = 0; x <= game.map.cols; x += 1) {
+          ctx.beginPath();
+          ctx.moveTo(x * tile + 0.5, 0);
+          ctx.lineTo(x * tile + 0.5, canvas.height);
+          ctx.stroke();
+        }
+        for (let y = 0; y <= game.map.rows; y += 1) {
+          ctx.beginPath();
+          ctx.moveTo(0, y * tile + 0.5);
+          ctx.lineTo(canvas.width, y * tile + 0.5);
+          ctx.stroke();
+        }
+      }
+
+      function drawSnake(player) {
+        if (!player || !player.alive) return;
+        const tile = game.map.tile;
+        const colors = player.id === "p1" ? getSnakeColors() : player.color;
+        const dir = player.dir || { x: 1, y: 0 };
+
+        player.body.forEach((p, idx) => {
+          const cx = (p.x + 0.5) * tile;
+          const cy = (p.y + 0.5) * tile;
+          const r = idx === 0 ? tile * 0.43 : tile * 0.37;
+
+          ctx.fillStyle = idx === 0 ? colors.head : colors.body;
+          ctx.beginPath();
+          ctx.ellipse(cx, cy, r, r * 0.9, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = "rgba(255,255,255,0.2)";
+          ctx.beginPath();
+          ctx.ellipse(cx - r * 0.18, cy - r * 0.22, r * 0.34, r * 0.22, 0.3, 0, Math.PI * 2);
+          ctx.fill();
+
+          if (idx > 0) {
+            ctx.strokeStyle = "rgba(255,255,255,0.12)";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.arc(cx, cy, r * 0.55, 0.2, Math.PI - 0.2);
+            ctx.stroke();
+          }
+        });
+
+        const h = player.body[0];
+        const hx = (h.x + 0.5) * tile;
+        const hy = (h.y + 0.5) * tile;
+        const eyeOffsetX = dir.x === 0 ? tile * 0.17 : dir.x > 0 ? tile * 0.13 : -tile * 0.13;
+        const eyeOffsetY = dir.y === 0 ? -tile * 0.12 : dir.y > 0 ? tile * 0.08 : -tile * 0.23;
+
+        ctx.fillStyle = "#fff";
+        ctx.beginPath();
+        ctx.arc(hx - tile * 0.12 + eyeOffsetX * 0.3, hy + eyeOffsetY, tile * 0.09, 0, Math.PI * 2);
+        ctx.arc(hx + tile * 0.12 + eyeOffsetX * 0.3, hy + eyeOffsetY, tile * 0.09, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = "#3f2d46";
+        ctx.beginPath();
+        ctx.arc(hx - tile * 0.11 + eyeOffsetX * 0.5, hy + eyeOffsetY, tile * 0.042, 0, Math.PI * 2);
+        ctx.arc(hx + tile * 0.11 + eyeOffsetX * 0.5, hy + eyeOffsetY, tile * 0.042, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 小蛇信子，增强“蛇的样子”。
+        const tongueX = hx + dir.x * tile * 0.45;
+        const tongueY = hy + dir.y * tile * 0.45;
+        ctx.strokeStyle = "#ff6ba8";
+        ctx.lineWidth = 1.7;
+        ctx.beginPath();
+        ctx.moveTo(hx + dir.x * tile * 0.28, hy + dir.y * tile * 0.28);
+        ctx.lineTo(tongueX, tongueY);
+        ctx.moveTo(tongueX, tongueY);
+        ctx.lineTo(tongueX + (dir.y !== 0 ? tile * 0.08 : 0), tongueY + (dir.x !== 0 ? tile * 0.08 : 0));
+        ctx.moveTo(tongueX, tongueY);
+        ctx.lineTo(tongueX - (dir.y !== 0 ? tile * 0.08 : 0), tongueY - (dir.x !== 0 ? tile * 0.08 : 0));
+        ctx.stroke();
+
+        if (player.shield) {
+          ctx.strokeStyle = "#97ffd8";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(hx, hy, tile * 0.55, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        if (game.mode === "duel" && player.invincible > 0) {
+          ctx.strokeStyle = "#ffe18a";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(hx, hy, tile * 0.68, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+
+      function drawFoods() {
+        const foodSkin = foodSkins.find((x) => x.id === state.unlock.activeFoodSkin) || foodSkins[0];
+        const tile = game.map.tile;
+        game.food.forEach((f, i) => {
+          const x = f.x * tile;
+          const y = f.y * tile;
+          const cx = x + tile * 0.5;
+          const cy = y + tile * 0.5;
+
+          ctx.shadowBlur = tile * 0.36;
+          ctx.shadowColor = "rgba(255, 130, 196, 0.6)";
+          ctx.fillStyle = THEMES[state.settings.theme].food;
+          ctx.beginPath();
+          ctx.arc(cx, cy, tile * 0.43, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.shadowBlur = 0;
+
+          ctx.fillStyle = "rgba(255,255,255,0.42)";
+          ctx.beginPath();
+          ctx.arc(cx - tile * 0.11, cy - tile * 0.14, tile * 0.11, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = "rgba(74,41,72,0.45)";
+          ctx.font = `${Math.max(11, Math.floor(tile * 0.78))}px sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(foodSkin.emoji, cx, cy + 1);
+        });
+      }
+
+      function drawItems() {
+        const tile = game.map.tile;
+        game.items.forEach((it) => {
+          const def = ITEM_TYPES.find((x) => x.id === it.type);
+          if (!def) return;
+          const x = it.x * tile;
+          const y = it.y * tile;
+          const cx = x + tile * 0.5;
+          const cy = y + tile * 0.5;
+          const r = tile * 0.38;
+
+          ctx.shadowBlur = tile * 0.4;
+          ctx.shadowColor = def.color;
+          ctx.fillStyle = def.color;
+          ctx.beginPath();
+          ctx.arc(cx, cy, r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.shadowBlur = 0;
+
+          ctx.fillStyle = "rgba(255,255,255,0.3)";
+          ctx.beginPath();
+          ctx.arc(cx - tile * 0.09, cy - tile * 0.09, tile * 0.09, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = "rgba(41,24,44,0.66)";
+          ctx.font = `${Math.max(10, Math.floor(tile * 0.48))}px sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(def.name[0], cx, cy + 1);
+        });
+      }
+
+      function drawObstacles() {
+        const tile = game.map.tile;
+        const drawBlock = (o, color) => {
+          ctx.fillStyle = color;
+          roundRect(ctx, o.x * tile + 2, o.y * tile + 2, tile - 4, tile - 4, 4);
+          ctx.fill();
+        };
+        game.obstacles.forEach((o) => drawBlock(o, "#7d8ca7"));
+        game.movingObstacles.forEach((o) => drawBlock(o, "#ff7f7f"));
+        game.vanishObstacles.forEach((o) => drawBlock(o, o.ttl < 1.5 ? "rgba(145,160,189,0.35)" : "#93a5c0"));
+      }
+
+      function drawBoss() {
+        const tile = game.map.tile;
+        if (!game.boss) return;
+        game.boss.body.forEach((b, idx) => {
+          const col = idx % 2 === 0 ? "#ff9e66" : "#ff5b6f";
+          ctx.fillStyle = col;
+          roundRect(ctx, b.x * tile + 1, b.y * tile + 1, tile - 2, tile - 2, 6);
+          ctx.fill();
+        });
+        const hp = game.boss.hp;
+        ctx.fillStyle = "rgba(0,0,0,0.6)";
+        ctx.fillRect(10, 10, 160, 24);
+        ctx.fillStyle = "#ff6d7b";
+        ctx.fillRect(12, 12, Math.max(0, (hp / (12 + Math.floor(game.level.id * 0.6))) * 156), 20);
+        ctx.fillStyle = "#fff";
+        ctx.font = "12px sans-serif";
+        ctx.fillText("BOSS HP: " + hp, 90, 27);
+      }
+
+      function getSnakeColors() {
+        const skin = snakeSkins.find((x) => x.id === state.unlock.activeSnakeSkin) || snakeSkins[0];
+        return { head: skin.style[0], body: skin.style[1], main: skin.style[0] };
+      }
+
+      function roundRect(context, x, y, w, h, r) {
+        context.beginPath();
+        context.moveTo(x + r, y);
+        context.arcTo(x + w, y, x + w, y + h, r);
+        context.arcTo(x + w, y + h, x, y + h, r);
+        context.arcTo(x, y + h, x, y, r);
+        context.arcTo(x, y, x + w, y, r);
+        context.closePath();
+      }
+
+      function setDirection(dir, who) {
+        if (!game || game.isOver) return;
+        const target = who || (game.mode === "duel" ? controlTarget : "p1");
+        const player = target === "p2" ? game.p2 : game.p1;
+        const prev = player.dir;
+        if (prev.x + dir.x === 0 && prev.y + dir.y === 0) return;
+        player.nextDir = dir;
+      }
+
+      function onKey(e) {
+        if (activeScreen !== "game" || !game) return;
+        const key = e.key.toLowerCase();
+
+        if (key === " ") {
+          e.preventDefault();
+          togglePause();
+          return;
+        }
+
+        const p1 = {
+          w: { x: 0, y: -1 },
+          s: { x: 0, y: 1 },
+          a: { x: -1, y: 0 },
+          d: { x: 1, y: 0 }
+        };
+        const arrows = {
+          arrowup: { x: 0, y: -1 },
+          arrowdown: { x: 0, y: 1 },
+          arrowleft: { x: -1, y: 0 },
+          arrowright: { x: 1, y: 0 }
+        };
+
+        if (game.mode === "duel") {
+          if (p1[key]) setDirection(p1[key], "p1");
+          if (arrows[key]) {
+            e.preventDefault();
+            setDirection(arrows[key], "p2");
+          }
+          return;
+        }
+
+        const d = p1[key] || arrows[key];
+        if (d) {
+          e.preventDefault();
+          setDirection(d, "p1");
+        }
+      }
+
+      function setupTouchControls() {
+        const wrap = document.getElementById("canvasWrap");
+        wrap.addEventListener("touchstart", (e) => {
+          if (!e.touches || !e.touches[0]) return;
+          touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        });
+
+        wrap.addEventListener("touchend", (e) => {
+          if (!touchStart || !e.changedTouches || !e.changedTouches[0]) return;
+          const end = { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+          const dx = end.x - touchStart.x;
+          const dy = end.y - touchStart.y;
+          const th = state.settings.touchThreshold;
+          if (Math.abs(dx) < th && Math.abs(dy) < th) return;
+          if (Math.abs(dx) > Math.abs(dy)) {
+            setDirection({ x: dx > 0 ? 1 : -1, y: 0 });
+          } else {
+            setDirection({ x: 0, y: dy > 0 ? 1 : -1 });
+          }
+        });
+
+        document.querySelectorAll("#mobilePad button[data-dir]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const d = btn.getAttribute("data-dir");
+            if (d === "up") setDirection({ x: 0, y: -1 });
+            if (d === "down") setDirection({ x: 0, y: 1 });
+            if (d === "left") setDirection({ x: -1, y: 0 });
+            if (d === "right") setDirection({ x: 1, y: 0 });
+          });
+        });
+      }
+
+      function togglePause() {
+        if (!game || game.isOver) return;
+        game.isPaused = !game.isPaused;
+        document.getElementById("pauseBtn").textContent = game.isPaused ? "继续" : "暂停";
+        toast(game.isPaused ? "已暂停" : "继续游戏");
+      }
+
+      function checkAchievement(id, pass) {
+        if (!pass || state.achievements[id]) return;
+        state.achievements[id] = true;
+        const found = ACHIEVEMENTS.find((x) => x.id === id);
+        if (found) {
+          state.coins += found.reward;
+          toast(`成就解锁：${found.title} +${found.reward}币`);
+        }
+      }
+
+      function checkDaily() {
+        if (!game) return;
+        state.daily.tasks.forEach((t) => {
+          if (t.done) return;
+          if (t.type === "score") t.progress = Math.max(t.progress, game.score);
+          if (t.type === "food") t.progress = Math.max(t.progress, game.p1.body.length - 3);
+          if (t.type === "item") t.progress = Math.max(t.progress, state.stats.itemPicked);
+
+          if (t.progress >= t.target) t.done = true;
+        });
+      }
+
+      function claimDaily() {
+        const done = state.daily.tasks.filter((x) => x.done).length;
+        if (done === 0) return toast("今日任务尚未完成");
+        if (state.daily.claimed) return toast("今日奖励已领取");
+        const reward = done * 35;
+        state.coins += reward;
+        state.daily.claimed = true;
+        if (done === 3) checkAchievement("all_daily", true);
+        saveData();
+        setupMenu();
+        toast(`领取成功：+${reward} 金币`);
+      }
+
+      function clamp(v, min, max) {
+        return Math.min(max, Math.max(min, v));
+      }
+
+      function bindEvents() {
+        document.getElementById("startBtn").onclick = startGame;
+        document.getElementById("howBtn").onclick = () => document.getElementById("guideModal").classList.add("show");
+        document.getElementById("closeGuide").onclick = () => document.getElementById("guideModal").classList.remove("show");
+
+        document.getElementById("settingBtn").onclick = () => {
+          renderSettings();
+          switchScreen("settings");
+        };
+        document.getElementById("boardBtn").onclick = () => {
+          renderLeaderboard();
+          switchScreen("leaderboard");
+        };
+        document.getElementById("achievementBtn").onclick = () => {
+          renderAchievements();
+          switchScreen("achievements");
+        };
+        document.getElementById("shopBtn").onclick = () => {
+          renderShop();
+          switchScreen("shop");
+        };
+        document.getElementById("gotoLevels").onclick = () => {
+          renderLevels();
+          switchScreen("levels");
+        };
+
+        document.querySelectorAll(".backMenu").forEach((b) => {
+          b.onclick = () => {
+            switchScreen("menu");
+            setupMenu();
+          };
+        });
+
+        document.getElementById("pauseBtn").onclick = togglePause;
+        document.getElementById("restartBtn").onclick = () => startGame();
+        document.getElementById("backBtn").onclick = () => {
+          if (game && !game.isOver) endGame(false, "主动结束");
+          hideResult();
+          switchScreen("menu");
+        };
+
+        document.getElementById("againBtn").onclick = () => {
+          hideResult();
+          startGame();
+        };
+
+        document.getElementById("overMenuBtn").onclick = () => {
+          hideResult();
+          switchScreen("menu");
+        };
+
+        document.getElementById("dailyClaim").onclick = claimDaily;
+
+        document.getElementById("switchControl").onclick = () => {
+          controlTarget = controlTarget === "p1" ? "p2" : "p1";
+          document.getElementById("switchControl").textContent = "当前控制：" + controlTarget.toUpperCase();
+        };
+
+        window.addEventListener("keydown", onKey, { passive: false });
+
+        window.addEventListener("resize", () => {
+          if (!game) return;
+          resizeCanvas(game.map.cols, game.map.rows, 20);
+          draw();
+        });
+
+        setupTouchControls();
+
+        document.addEventListener("visibilitychange", () => {
+          if (document.hidden && game && !game.isOver) {
+            game.isPaused = true;
+            document.getElementById("pauseBtn").textContent = "继续";
+          }
+        });
+      }
+
+      function init() {
+        syncDailyTasks();
+        bindEvents();
+        setupMenu();
+        renderSettings();
+        renderLevels();
+        renderAchievements();
+        applyThemeVars();
+        if (state.settings.music) Audio.startMusic();
+      }
+
+      init();
+    })();
+  </script>
+</body>
+</html>

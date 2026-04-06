@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>双人贪吃蛇 · WebRTC P2P 测试</title>
+    <script src="./peerjs.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: radial-gradient(circle at top, #1d2b44 0%, #0f1726 40%, #090d16 100%);
+            color: #e8f0ff;
+            font-family: "Microsoft YaHei", sans-serif;
+            padding: 24px 14px 30px;
+        }
+
+        h1 {
+            font-size: 26px;
+            margin-bottom: 14px;
+            letter-spacing: 1px;
+        }
+
+        .panel {
+            width: min(900px, 96vw);
+            background: rgba(8, 15, 27, 0.75);
+            border: 1px solid rgba(170, 220, 255, 0.24);
+            border-radius: 16px;
+            padding: 16px;
+            backdrop-filter: blur(6px);
+            box-shadow: 0 16px 40px rgba(2, 10, 20, 0.5);
+            margin-bottom: 16px;
+        }
+
+        .row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .row:last-child {
+            margin-bottom: 0;
+        }
+
+        input {
+            flex: 1;
+            min-width: 180px;
+            padding: 10px 12px;
+            border: 1px solid #3a5678;
+            border-radius: 10px;
+            background: #0b1420;
+            color: #f2f7ff;
+        }
+
+        button {
+            padding: 10px 14px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            color: #06131d;
+            font-weight: 700;
+            background: linear-gradient(135deg, #62ffc2 0%, #4fd2ff 100%);
+        }
+
+        button:disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+        .text {
+            color: #b7cae6;
+            font-size: 14px;
+        }
+
+        #status {
+            color: #bfe2ff;
+            font-size: 15px;
+        }
+
+        .scoreboard {
+            display: flex;
+            justify-content: space-between;
+            gap: 14px;
+            margin-bottom: 12px;
+            font-size: 14px;
+            color: #d8e6ff;
+        }
+
+        #game {
+            width: min(900px, 96vw);
+            border: 2px solid #4fd2ff;
+            border-radius: 14px;
+            background: #05080f;
+            box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5);
+        }
+
+        .tips {
+            width: min(900px, 96vw);
+            margin-top: 10px;
+            color: #9fb4d3;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <h1>双人贪吃蛇（WebRTC P2P）</h1>
+
+    <div class="panel">
+        <div class="row">
+            <div>你的ID：<b id="myId">生成中...</b></div>
+            <div class="text">角色：<b id="role">未连接</b></div>
+        </div>
+        <div class="row">
+            <input id="peerId" placeholder="输入好友ID后点击连接">
+            <button id="connectBtn">连接好友</button>
+            <button id="startBtn" disabled>开始游戏</button>
+            <button id="restartBtn" disabled>重新开局</button>
+        </div>
+        <div class="row">
+            <div id="status">正在初始化连接...</div>
+        </div>
+    </div>
+
+    <div class="scoreboard">
+        <div>绿色玩家（房主）：<b id="scoreA">0</b></div>
+        <div>蓝色玩家（加入者）：<b id="scoreB">0</b></div>
+        <div>当前状态：<b id="gameState">等待连接</b></div>
+    </div>
+
+    <canvas id="game" width="600" height="400"></canvas>
+    <div class="tips">
+        操作：方向键/WASD 均可控制自己蛇头方向。房主负责同步整个游戏状态；加入者只发送输入指令，双方画面会一致。<br>
+        测试方式：A 打开页面获得ID -> B 输入A的ID连接 -> A点“开始游戏”即可联机。
+    </div>
+
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        const myIdEl = document.getElementById('myId');
+        const roleEl = document.getElementById('role');
+        const statusEl = document.getElementById('status');
+        const gameStateEl = document.getElementById('gameState');
+        const scoreAEl = document.getElementById('scoreA');
+        const scoreBEl = document.getElementById('scoreB');
+        const peerIdInput = document.getElementById('peerId');
+        const connectBtn = document.getElementById('connectBtn');
+        const startBtn = document.getElementById('startBtn');
+        const restartBtn = document.getElementById('restartBtn');
+
+        const GRID = 20;
+        const COLS = canvas.width / GRID;
+        const ROWS = canvas.height / GRID;
+        const TICK_MS = 130;
+
+        let conn = null;
+        let isHost = false;
+        let gameTimer = null;
+        let gameRunning = false;
+        let localPlayer = null;
+
+        const state = {
+            snakes: {
+                A: [],
+                B: []
+            },
+            dirs: {
+                A: { x: 1, y: 0 },
+                B: { x: -1, y: 0 }
+            },
+            pendingDirs: {
+                A: { x: 1, y: 0 },
+                B: { x: -1, y: 0 }
+            },
+            food: { x: 0, y: 0 },
+            scores: { A: 0, B: 0 },
+            gameOver: false,
+            winner: ''
+        };
+
+        const isFileProtocol = location.protocol === 'file:';
+        if (isFileProtocol) {
+            connectBtn.disabled = true;
+            startBtn.disabled = true;
+            restartBtn.disabled = true;
+            myIdEl.textContent = '不可用';
+            setStatus('检测到你正在使用 file:// 打开页面。请先启动本地HTTP服务，再通过 http://localhost 访问。');
+            setGameState('被浏览器安全策略阻止');
+            roleEl.textContent = '不可用（需HTTP）';
+        }
+
+        let peer = null;
+        if (!isFileProtocol) {
+            peer = new Peer({
+                host: '0.peerjs.com',
+                port: 443,
+                path: '/',
+                secure: true
+            });
+
+            peer.on('open', id => {
+                myIdEl.textContent = id;
+                setStatus('ID已生成，等待连接。你可以作为房主被连接，或输入好友ID主动连接。');
+            });
+
+            peer.on('error', err => {
+                setStatus('连接错误：' + err.type);
+            });
+
+            peer.on('connection', connection => {
+                conn = connection;
+                isHost = true;
+                localPlayer = 'A';
+                roleEl.textContent = '房主（绿色）';
+                setupConnection();
+            });
+        }
+
+        connectBtn.addEventListener('click', () => {
+            const targetId = peerIdInput.value.trim();
+            if (!targetId) {
+                alert('请输入对方ID');
+                return;
+            }
+            if (!peer) return;
+            conn = peer.connect(targetId);
+            setupConnection();
+        });
+
+        startBtn.addEventListener('click', () => {
+            if (!isHost || !conn || !conn.open) return;
+            resetState();
+            startGameLoop();
+            broadcast({ type: 'game_start', payload: getPublicState() });
+            setGameState('游戏进行中');
+            setStatus('已开始游戏，祝你好运。');
+        });
+
+        restartBtn.addEventListener('click', () => {
+            if (!isHost || !conn || !conn.open) return;
+            resetState();
+            startGameLoop();
+            broadcast({ type: 'game_start', payload: getPublicState() });
+            setGameState('游戏进行中');
+            setStatus('已重新开局。');
+        });
+
+        function setupConnection() {
+            conn.on('open', () => {
+                if (!isHost) {
+                    localPlayer = 'B';
+                    roleEl.textContent = '加入者（蓝色）';
+                }
+
+                startBtn.disabled = !isHost;
+                restartBtn.disabled = !isHost;
+                setGameState('已连接，等待房主开始');
+                setStatus('连接成功：P2P直连已建立。');
+
+                if (isHost) {
+                    broadcast({ type: 'role', role: 'B' });
+                }
+            });
+
+            conn.on('data', data => {
+                if (!data || typeof data !== 'object') return;
+                if (data.type === 'input' && isHost) {
+                    applyInput('B', data.dir);
+                }
+                if (data.type === 'state' && !isHost) {
+                    applyRemoteState(data.payload);
+                }
+                if (data.type === 'game_start' && !isHost) {
+                    applyRemoteState(data.payload);
+                    setGameState('游戏进行中');
+                    setStatus('房主已开始游戏。');
+                }
+                if (data.type === 'game_over' && !isHost) {
+                    applyRemoteState(data.payload);
+                    setGameState('游戏结束');
+                    setStatus(data.message || '游戏结束');
+                }
+                if (data.type === 'role' && !isHost) {
+                    localPlayer = data.role;
+                }
+            });
+
+            conn.on('close', () => {
+                setStatus('连接已断开。');
+                setGameState('等待连接');
+                startBtn.disabled = true;
+                restartBtn.disabled = true;
+            });
+        }
+
+        function broadcast(message) {
+            if (conn && conn.open) {
+                conn.send(message);
+            }
+        }
+
+        document.addEventListener('keydown', e => {
+            const dir = keyToDir(e.key);
+            if (!dir || !localPlayer) return;
+
+            if (isHost) {
+                applyInput('A', dir);
+            } else {
+                broadcast({ type: 'input', dir });
+            }
+        });
+
+        function keyToDir(key) {
+            if (key === 'ArrowUp' || key === 'w' || key === 'W') return { x: 0, y: -1 };
+            if (key === 'ArrowDown' || key === 's' || key === 'S') return { x: 0, y: 1 };
+            if (key === 'ArrowLeft' || key === 'a' || key === 'A') return { x: -1, y: 0 };
+            if (key === 'ArrowRight' || key === 'd' || key === 'D') return { x: 1, y: 0 };
+            return null;
+        }
+
+        function applyInput(playerId, dir) {
+            if (!dir) return;
+            const prev = state.dirs[playerId];
+            if (prev.x + dir.x === 0 && prev.y + dir.y === 0) {
+                return;
+            }
+            state.pendingDirs[playerId] = { x: dir.x, y: dir.y };
+        }
+
+        function resetState() {
+            state.snakes.A = [
+                { x: 5, y: 10 },
+                { x: 4, y: 10 },
+                { x: 3, y: 10 }
+            ];
+            state.snakes.B = [
+                { x: COLS - 6, y: 10 },
+                { x: COLS - 5, y: 10 },
+                { x: COLS - 4, y: 10 }
+            ];
+            state.dirs.A = { x: 1, y: 0 };
+            state.dirs.B = { x: -1, y: 0 };
+            state.pendingDirs.A = { x: 1, y: 0 };
+            state.pendingDirs.B = { x: -1, y: 0 };
+            state.scores.A = 0;
+            state.scores.B = 0;
+            state.gameOver = false;
+            state.winner = '';
+            state.food = spawnFood();
+            gameRunning = true;
+            updateScoreboard();
+        }
+
+        function spawnFood() {
+            while (true) {
+                const x = Math.floor(Math.random() * COLS);
+                const y = Math.floor(Math.random() * ROWS);
+                const occupied = state.snakes.A.concat(state.snakes.B).some(p => p.x === x && p.y === y);
+                if (!occupied) return { x, y };
+            }
+        }
+
+        function startGameLoop() {
+            stopGameLoop();
+            gameRunning = true;
+            gameTimer = setInterval(() => {
+                stepGame();
+                broadcast({ type: 'state', payload: getPublicState() });
+            }, TICK_MS);
+        }
+
+        function stopGameLoop() {
+            gameRunning = false;
+            if (gameTimer) {
+                clearInterval(gameTimer);
+                gameTimer = null;
+            }
+        }
+
+        function stepGame() {
+            if (!gameRunning || state.gameOver) return;
+
+            state.dirs.A = { ...state.pendingDirs.A };
+            state.dirs.B = { ...state.pendingDirs.B };
+
+            const nextA = nextHead(state.snakes.A[0], state.dirs.A);
+            const nextB = nextHead(state.snakes.B[0], state.dirs.B);
+
+            const deadA = willDie(nextA, state.snakes.A, state.snakes.B);
+            const deadB = willDie(nextB, state.snakes.B, state.snakes.A);
+            const headCrash = nextA.x === nextB.x && nextA.y === nextB.y;
+
+            if (deadA || deadB || headCrash) {
+                state.gameOver = true;
+                stopGameLoop();
+                if ((deadA && deadB) || headCrash) {
+                    state.winner = '平局';
+                } else if (deadA) {
+                    state.winner = '蓝色玩家获胜';
+                } else {
+                    state.winner = '绿色玩家获胜';
+                }
+                updateScoreboard();
+                setGameState('游戏结束');
+                setStatus('游戏结束：' + state.winner);
+                broadcast({
+                    type: 'game_over',
+                    message: '游戏结束：' + state.winner,
+                    payload: getPublicState()
+                });
+                return;
+            }
+
+            moveSnake('A', nextA);
+            moveSnake('B', nextB);
+            updateScoreboard();
+        }
+
+        function nextHead(head, dir) {
+            return { x: head.x + dir.x, y: head.y + dir.y };
+        }
+
+        function willDie(next, ownSnake, otherSnake) {
+            if (next.x < 0 || next.x >= COLS || next.y < 0 || next.y >= ROWS) return true;
+            for (let i = 0; i < ownSnake.length - 1; i++) {
+                if (ownSnake[i].x === next.x && ownSnake[i].y === next.y) return true;
+            }
+            for (let i = 0; i < otherSnake.length; i++) {
+                if (otherSnake[i].x === next.x && otherSnake[i].y === next.y) return true;
+            }
+            return false;
+        }
+
+        function moveSnake(playerId, nextHeadPos) {
+            const snake = state.snakes[playerId];
+            snake.unshift(nextHeadPos);
+            if (nextHeadPos.x === state.food.x && nextHeadPos.y === state.food.y) {
+                state.scores[playerId] += 1;
+                state.food = spawnFood();
+            } else {
+                snake.pop();
+            }
+        }
+
+        function getPublicState() {
+            return JSON.parse(JSON.stringify(state));
+        }
+
+        function applyRemoteState(remoteState) {
+            if (!remoteState) return;
+            Object.assign(state, remoteState);
+            updateScoreboard();
+        }
+
+        function setStatus(msg) {
+            statusEl.textContent = msg;
+        }
+
+        function setGameState(msg) {
+            gameStateEl.textContent = msg;
+        }
+
+        function updateScoreboard() {
+            scoreAEl.textContent = String(state.scores.A);
+            scoreBEl.textContent = String(state.scores.B);
+        }
+
+        function draw() {
+            ctx.fillStyle = '#05080f';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            drawGrid();
+            drawFood();
+            drawSnake(state.snakes.A, '#62ffc2', '#24c56f');
+            drawSnake(state.snakes.B, '#5ecbff', '#2e7dff');
+
+            if (state.gameOver) {
+                drawOverlay('游戏结束：' + state.winner);
+            }
+
+            requestAnimationFrame(draw);
+        }
+
+        function drawGrid() {
+            ctx.strokeStyle = 'rgba(130, 160, 200, 0.12)';
+            ctx.lineWidth = 1;
+            for (let x = 0; x <= canvas.width; x += GRID) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+            for (let y = 0; y <= canvas.height; y += GRID) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+        }
+
+        function drawFood() {
+            ctx.fillStyle = '#ff8e6b';
+            roundRect(
+                state.food.x * GRID + 3,
+                state.food.y * GRID + 3,
+                GRID - 6,
+                GRID - 6,
+                5,
+                true
+            );
+        }
+
+        function drawSnake(snake, headColor, bodyColor) {
+            snake.forEach((seg, index) => {
+                ctx.fillStyle = index === 0 ? headColor : bodyColor;
+                roundRect(
+                    seg.x * GRID + 2,
+                    seg.y * GRID + 2,
+                    GRID - 4,
+                    GRID - 4,
+                    6,
+                    true
+                );
+            });
+        }
+
+        function drawOverlay(text) {
+            ctx.fillStyle = 'rgba(3, 6, 14, 0.7)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 36px Microsoft YaHei';
+            ctx.textAlign = 'center';
+            ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+            ctx.font = '16px Microsoft YaHei';
+            ctx.fillStyle = '#9fd6ff';
+            ctx.fillText('房主可点击“重新开局”继续游戏', canvas.width / 2, canvas.height / 2 + 36);
+        }
+
+        function roundRect(x, y, w, h, r, fill) {
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.arcTo(x + w, y, x + w, y + h, r);
+            ctx.arcTo(x + w, y + h, x, y + h, r);
+            ctx.arcTo(x, y + h, x, y, r);
+            ctx.arcTo(x, y, x + w, y, r);
+            if (fill) ctx.fill();
+        }
+
+        resetState();
+        stopGameLoop();
+        setGameState('等待连接');
+        draw();
+
+    </script>
+</body>
+</html>
