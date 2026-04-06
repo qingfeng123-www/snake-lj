@@ -199,6 +199,7 @@
         let pendingIncomingConn = null;
         let connectedPeerId = '';
         let connectTimeoutId = null;
+        let connectingToPeerId = '';
 
         const state = {
             snakes: {
@@ -265,9 +266,13 @@
 
             hideIncomingRequest();
             isConnecting = true;
+            connectingToPeerId = targetId;
             connectBtn.disabled = true;
             connectBtn.textContent = '连接中...';
-            conn = peer.connect(targetId);
+            conn = peer.connect(targetId, {
+                reliable: true,
+                serialization: 'json'
+            });
             setupConnection(conn, false);
             log('正在主动连接目标ID：' + targetId);
         });
@@ -343,6 +348,7 @@
 
                 conn = activeConn;
                 isConnecting = false;
+                connectingToPeerId = '';
                 connectedPeerId = activeConn.peer || '';
                 connectBtn.disabled = true;
                 connectBtn.textContent = '已连接';
@@ -380,9 +386,10 @@
             connectTimeoutId = setTimeout(() => {
                 if (!activeConn.open) {
                     const timeoutPeer = activeConn.peer || '未知';
-                    setStatus('连接超时，请重试。');
+                    setStatus('连接超时，请重试（当前网络可能限制UDP/TURN）。');
                     log('连接超时：' + timeoutPeer);
                     isConnecting = false;
+                    connectingToPeerId = '';
                     connectBtn.disabled = false;
                     connectBtn.textContent = '连接好友';
                     try {
@@ -391,7 +398,7 @@
                         log('超时关闭连接失败：' + (err && err.message ? err.message : 'unknown'));
                     }
                 }
-            }, 12000);
+            }, 25000);
 
             activeConn.on('data', data => {
                 if (!data || typeof data !== 'object') return;
@@ -421,6 +428,7 @@
                 setStatus(msg);
                 log(msg);
                 isConnecting = false;
+                connectingToPeerId = '';
                 if (connectTimeoutId) {
                     clearTimeout(connectTimeoutId);
                     connectTimeoutId = null;
@@ -439,6 +447,7 @@
                     isHost = false;
                     localPlayer = null;
                     isConnecting = false;
+                    connectingToPeerId = '';
                     if (connectTimeoutId) {
                         clearTimeout(connectTimeoutId);
                         connectTimeoutId = null;
@@ -453,6 +462,8 @@
                 restartBtn.disabled = true;
                 log('数据通道已关闭（对端：' + closedPeer + '）。');
             });
+
+            attachIceDebug(activeConn);
         }
 
         async function bootstrapPeer() {
@@ -473,15 +484,24 @@
                 debug: 2,
                 config: {
                     iceServers: [
+                        { urls: 'stun:stun.cloudflare.com:3478' },
+                        { urls: 'stun:openrelay.metered.ca:80' },
+                        { urls: 'stun:openrelay.metered.ca:443' },
                         { urls: 'stun:stun.l.google.com:19302' },
                         { urls: 'stun:stun1.l.google.com:19302' },
                         {
-                            urls: 'turn:openrelay.metered.ca:80',
+                            urls: [
+                                'turn:openrelay.metered.ca:80?transport=udp',
+                                'turn:openrelay.metered.ca:80?transport=tcp'
+                            ],
                             username: 'openrelayproject',
                             credential: 'openrelayproject'
                         },
                         {
-                            urls: 'turn:openrelay.metered.ca:443',
+                            urls: [
+                                'turn:openrelay.metered.ca:443?transport=tcp',
+                                'turns:openrelay.metered.ca:443?transport=tcp'
+                            ],
                             username: 'openrelayproject',
                             credential: 'openrelayproject'
                         }
@@ -527,15 +547,58 @@
                     return;
                 }
                 if (isConnecting) {
-                    log('收到来自 ' + requesterId + ' 的来电，但本端正在连接中，自动拒绝。');
-                    connection.close();
-                    return;
+                    if (requesterId === connectingToPeerId) {
+                        log('检测到双方同时发起连接，切换到来电确认流程。');
+                        if (conn && !conn.open && conn !== connection) {
+                            try {
+                                conn.close();
+                            } catch (err) {
+                                log('关闭旧的出站连接失败：' + (err && err.message ? err.message : 'unknown'));
+                            }
+                        }
+                        isConnecting = false;
+                        connectingToPeerId = '';
+                        connectBtn.disabled = false;
+                        connectBtn.textContent = '连接好友';
+                    } else {
+                        log('收到来自 ' + requesterId + ' 的来电，但本端正在连接中，自动拒绝。');
+                        connection.close();
+                        return;
+                    }
                 }
 
                 pendingIncomingConn = connection;
                 showIncomingRequest(requesterId);
                 setStatus('收到连接请求：' + requesterId + '，请选择接受或拒绝。');
                 log('收到被动连接请求，等待用户确认。');
+            });
+        }
+
+        function attachIceDebug(activeConn) {
+            const pc = activeConn.peerConnection;
+            if (!pc) {
+                log('ICE调试：peerConnection 不可用。');
+                return;
+            }
+
+            log('ICE调试已挂载。');
+
+            pc.addEventListener('iceconnectionstatechange', () => {
+                log('ICE状态：' + pc.iceConnectionState);
+            });
+
+            pc.addEventListener('connectionstatechange', () => {
+                log('RTCPeerConnection状态：' + pc.connectionState);
+            });
+
+            pc.addEventListener('icegatheringstatechange', () => {
+                log('ICE采集状态：' + pc.iceGatheringState);
+            });
+
+            pc.addEventListener('icecandidateerror', event => {
+                const host = event && event.hostCandidate ? event.hostCandidate : 'unknown';
+                const url = event && event.url ? event.url : 'unknown';
+                log('ICE候选错误 host=' + host + ' url=' + url + ' code=' + event.errorCode);
             });
         }
 
