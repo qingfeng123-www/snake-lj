@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>双人贪吃蛇 · WebRTC P2P 测试</title>
-    <script src="./peerjs.min.js"></script>
+    <link rel="icon" href="data:,">
     <style>
         * {
             margin: 0;
@@ -110,6 +110,21 @@
             font-size: 13px;
             line-height: 1.6;
         }
+
+        #debugLog {
+            width: min(900px, 96vw);
+            margin-top: 8px;
+            max-height: 140px;
+            overflow: auto;
+            padding: 10px;
+            font-size: 12px;
+            color: #a9c8ec;
+            background: rgba(6, 12, 22, 0.7);
+            border: 1px solid rgba(125, 168, 212, 0.28);
+            border-radius: 10px;
+            white-space: pre-wrap;
+            line-height: 1.45;
+        }
     </style>
 </head>
 <body>
@@ -140,8 +155,10 @@
     <canvas id="game" width="600" height="400"></canvas>
     <div class="tips">
         操作：方向键/WASD 均可控制自己蛇头方向。房主负责同步整个游戏状态；加入者只发送输入指令，双方画面会一致。<br>
-        测试方式：A 打开页面获得ID -> B 输入A的ID连接 -> A点“开始游戏”即可联机。
+        测试方式：A 打开页面获得ID -> B 输入A的ID连接 -> A点“开始游戏”即可联机。<br>
+        联机排障：建议用 Chrome 无痕窗口测试，并临时关闭可能拦截网络请求的扩展。
     </div>
+    <pre id="debugLog">[调试日志] 页面已加载，等待初始化...</pre>
 
     <script>
         const canvas = document.getElementById('game');
@@ -156,6 +173,7 @@
         const connectBtn = document.getElementById('connectBtn');
         const startBtn = document.getElementById('startBtn');
         const restartBtn = document.getElementById('restartBtn');
+        const debugLogEl = document.getElementById('debugLog');
 
         const GRID = 20;
         const COLS = canvas.width / GRID;
@@ -167,6 +185,7 @@
         let gameTimer = null;
         let gameRunning = false;
         let localPlayer = null;
+        let peerReady = false;
 
         const state = {
             snakes: {
@@ -196,33 +215,12 @@
             setStatus('检测到你正在使用 file:// 打开页面。请先启动本地HTTP服务，再通过 http://localhost 访问。');
             setGameState('被浏览器安全策略阻止');
             roleEl.textContent = '不可用（需HTTP）';
+            log('检测到 file 协议，已禁止联机功能。');
         }
 
         let peer = null;
         if (!isFileProtocol) {
-            peer = new Peer({
-                host: '0.peerjs.com',
-                port: 443,
-                path: '/',
-                secure: true
-            });
-
-            peer.on('open', id => {
-                myIdEl.textContent = id;
-                setStatus('ID已生成，等待连接。你可以作为房主被连接，或输入好友ID主动连接。');
-            });
-
-            peer.on('error', err => {
-                setStatus('连接错误：' + err.type);
-            });
-
-            peer.on('connection', connection => {
-                conn = connection;
-                isHost = true;
-                localPlayer = 'A';
-                roleEl.textContent = '房主（绿色）';
-                setupConnection();
-            });
+            bootstrapPeer();
         }
 
         connectBtn.addEventListener('click', () => {
@@ -231,9 +229,14 @@
                 alert('请输入对方ID');
                 return;
             }
-            if (!peer) return;
+            if (!peer || !peerReady) {
+                setStatus('Peer 尚未就绪，请稍后再试。');
+                log('主动连接失败：Peer 未准备好。');
+                return;
+            }
             conn = peer.connect(targetId);
             setupConnection();
+            log('正在主动连接目标ID：' + targetId);
         });
 
         startBtn.addEventListener('click', () => {
@@ -255,6 +258,7 @@
         });
 
         function setupConnection() {
+            if (!conn) return;
             conn.on('open', () => {
                 if (!isHost) {
                     localPlayer = 'B';
@@ -265,6 +269,7 @@
                 restartBtn.disabled = !isHost;
                 setGameState('已连接，等待房主开始');
                 setStatus('连接成功：P2P直连已建立。');
+                log('数据通道已打开，连接成功。');
 
                 if (isHost) {
                     broadcast({ type: 'role', role: 'B' });
@@ -294,12 +299,138 @@
                 }
             });
 
+            conn.on('error', err => {
+                const msg = '数据通道错误：' + (err && err.type ? err.type : 'unknown');
+                setStatus(msg);
+                log(msg);
+            });
+
             conn.on('close', () => {
                 setStatus('连接已断开。');
                 setGameState('等待连接');
                 startBtn.disabled = true;
                 restartBtn.disabled = true;
+                log('数据通道已关闭。');
             });
+        }
+
+        async function bootstrapPeer() {
+            const loaded = await ensurePeerScript();
+            if (!loaded || typeof Peer === 'undefined') {
+                myIdEl.textContent = '初始化失败';
+                setStatus('PeerJS 加载失败，请检查网络或部署文件。');
+                setGameState('初始化失败');
+                log('PeerJS 加载失败，无法建立连接。');
+                return;
+            }
+
+            peer = new Peer({
+                host: '0.peerjs.com',
+                port: 443,
+                path: '/',
+                secure: true,
+                debug: 2,
+                config: {
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' },
+                        {
+                            urls: 'turn:openrelay.metered.ca:80',
+                            username: 'openrelayproject',
+                            credential: 'openrelayproject'
+                        },
+                        {
+                            urls: 'turn:openrelay.metered.ca:443',
+                            username: 'openrelayproject',
+                            credential: 'openrelayproject'
+                        }
+                    ]
+                }
+            });
+
+            peer.on('open', id => {
+                peerReady = true;
+                myIdEl.textContent = id;
+                setStatus('ID已生成，等待连接。你可以作为房主被连接，或输入好友ID主动连接。');
+                log('Peer 打开成功，ID=' + id);
+            });
+
+            peer.on('disconnected', () => {
+                peerReady = false;
+                setStatus('信令连接断开，尝试重连中...');
+                log('Peer disconnected，执行 peer.reconnect()。');
+                try {
+                    peer.reconnect();
+                } catch (err) {
+                    log('Peer 重连失败：' + (err && err.message ? err.message : 'unknown'));
+                }
+            });
+
+            peer.on('close', () => {
+                peerReady = false;
+                setStatus('Peer 已关闭，请刷新页面重试。');
+                log('Peer close。');
+            });
+
+            peer.on('error', err => {
+                const detail = err && (err.type || err.message) ? (err.type || err.message) : 'unknown';
+                setStatus('连接错误：' + detail);
+                log('Peer error: ' + detail);
+            });
+
+            peer.on('connection', connection => {
+                conn = connection;
+                isHost = true;
+                localPlayer = 'A';
+                roleEl.textContent = '房主（绿色）';
+                log('收到被动连接请求，已切换为房主。');
+                setupConnection();
+            });
+        }
+
+        function ensurePeerScript() {
+            if (typeof Peer !== 'undefined') {
+                log('PeerJS 已存在，跳过脚本加载。');
+                return Promise.resolve(true);
+            }
+
+            const candidates = [
+                './peerjs.min.js',
+                'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js',
+                'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js'
+            ];
+
+            return new Promise(resolve => {
+                const tryLoad = index => {
+                    if (index >= candidates.length) {
+                        resolve(false);
+                        return;
+                    }
+
+                    const src = candidates[index];
+                    const script = document.createElement('script');
+                    script.src = src;
+                    script.async = true;
+                    script.onload = () => {
+                        log('PeerJS 加载成功：' + src);
+                        resolve(true);
+                    };
+                    script.onerror = () => {
+                        log('PeerJS 加载失败：' + src);
+                        script.remove();
+                        tryLoad(index + 1);
+                    };
+                    document.head.appendChild(script);
+                };
+
+                tryLoad(0);
+            });
+        }
+
+        function log(message) {
+            const time = new Date().toLocaleTimeString();
+            debugLogEl.textContent += '\n[' + time + '] ' + message;
+            debugLogEl.scrollTop = debugLogEl.scrollHeight;
         }
 
         function broadcast(message) {
